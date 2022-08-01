@@ -1,0 +1,283 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+%\usepackage{xunicode}
+\usepackage[T1]{fontenc}
+%\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage[english]{babel}
+%\usepackage{polyglossia}
+%\setmainlanguage{english}
+\usepackage{amsmath}
+\usepackage{amssymb}
+%\usepackage{unicode-math}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+
+\newcommand\setR{\mathbb{R}}
+\newcommand\setZ{\mathbb{Z}}
+\newcommand\setN{\mathbb{N}}
+
+\title{Array expansion in function arguments and return values}
+\author{Quentin \textsc{Corradi}}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+Arrays are an abstraction for handling memory using integers. It abstracts
+contiguous memory into a partial map from integers to memory cells. This
+abstraction could also be conceived as a partial map from integers to variables.
+This means any array \(t\) of size \(N\) could be replaced by \(N\) variables
+\(t_0, \dots, t_{N - 1}\) and a pair of functions
+\((\mathit{get}, \mathit{set})\) such that \(\mathit{get} : k \mapsto t_k\) and
+\(\mathit{set}\;k\;x\) sets \(t_k\) to \(x\).
+
+\smallskip
+
+The idea of array expansion is that the above interpretation of arrays can be
+used litterally as it doesn't need contiguity of variables in memory or any
+hardware support for integer indexing while still allowing all common operations
+on arrays: An array whose size is known can be replaced during compilation by as
+many variables as necessary, simplifying access to some kind of indicies to
+simple variable accesses.
+
+\smallskip
+
+Jasmin is a compiler targetted at ???.
+ Jasmin est un compilateur utilisé pour la crypto, il est associé d'une preuve
+ de correction et de préservation de constant-time.
+The Jasmin language is close to assembly, the main differences lies in:
+\begin{itemize}
+\item Jasmin abstracts numerical operations common in cryptography
+\item Jasmin provides variables and performs variable allocation in registers
+\item Jasmin supports arrays
+\item Jasmin provides common control flow structures
+\item Jasmin provides functions with support for C calling convention if needed
+\end{itemize}\smallskip
+
+In Jasmin there are two kind of variables, the stack allocated ones and the
+register allocated ones. The user has to tell the compiler the kind of every
+variables. This also holds true for arrays. However on most processor on which
+people run ??? software there is no hardware support for indexing registers with
+a value not encoded in the instruction. So some compilation step eliminates
+these arrays.
+
+\smallskip
+
+In this article we did not implement most of the array expansion the Jasmin
+compiler already performs. Instead we extended this transformation for some
+previously unsupported cases, namely expanding register arrays in function
+arguments and return values. 
+
+\medskip
+
+This article is organised as follows:
+In Section \ref{sec:syntax} the relevant parts of Jasmin syntax trees are
+presented then the syntactic side of array expansion is explained more in-depth
+for our intended use in Jasmin.
+In Section \ref{sec:semantics} the relevant parts of Jasmin semantics are
+presented then the semantic side of array expansion is explored.
+% TODO: In section \ref{sec:???}
+
+ Présentation des modifications de la sémantique au niveau des fonctions ainsi
+ que des varmap, avec les propriétés importantes et l'élimination des types
+ dépendants pour justifier les choix. Et de la transformation effectuée.
+
+ Présentation du travail restant dans le stage ainsi que potentiellement après
+ le stage: FIXER LES PREUVES
+
+
+\section{Array expansion compiler pass}\label{sec:syntax}
+
+\subsection{Introduction to relevant parts of Jasmin syntax}
+
+\begin{figure}
+\obeylines\obeyspaces\ttfamily%
+type ty =
+| Word of wsize
+| Arr  of wsize \(\times\;\setZ\)
+
+type v\_kind =
+| Stack of pointer
+| Reg   of reg\_kind \(\times\) pointer
+
+type var = \{
+~ v\_id   : uid;
+~ v\_kind : v\_kind;
+~ v\_ty   : ty;
+\}
+
+type expr =
+| Pconst of \(\setZ\)
+| Parr\_init of \(\setZ\)
+| Pvar   of var
+| Pget   of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
+| Psub   of arr\_access \(\times\) wsize \(\times\;\setZ\;\times\) var \(\times\) expr
+| Pload  of wsize \(\times\) var \(\times\) expr
+
+type lval =
+| Lnone of ty
+| Lvar  of var
+| Lmem  of wsize \(\times\) var \(\times\) expr
+| Laset of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
+| Lasub of arr\_access \(\times\) wsize \(\times\;\setZ\;\times\) var \(\times\) expr
+
+type instr =
+| Cassgn of lval \(\times\) ty \(\times\) expr
+| Copn   of lval list \(\times\) Sopn.sopn \(\times\) expr list
+| Ccall  of lval list \(\times\) uid \(\times\) expr list
+
+type call\_conv =
+| Export
+| Subroutine
+
+type func = \{
+~ f\_cc   : call\_conv;
+~ f\_name : uid;
+~ f\_args : var list;
+~ f\_body : instr list;
+~ f\_ret  : var list;
+\}
+
+type prog = func list
+
+\caption{Simplified version of the relevant parts of Jasmin programs AST}
+\end{figure}
+
+In this section, the relevant parts of Jasmin programs are described. The
+irrelevant parts, if mentionned, will not be expanded upon.
+
+A Jasmin progam is a list of functions among other things. A function is made
+among other things of its name, a unique identifier; its parameters, a list of
+variables; its body, a list of statements; its returned variables, a list of
+variables; and its kind. The kind of a function can be exported to the outside,
+in which case the function must follow some calling convention, or internal.
+
+\smallskip
+
+A statement can be an assignment, a function call and Copn TODO.
+Control flow are also statements made of statements among other things.
+
+An assignment is made of a left member and an expression. A function call is
+made of the called function identifier, a list of left members matching the
+function returned variables list on length, and a list of expression matching
+the function parameters list on length. Copn TODO is made of a list of left members and a list of expressions.
+
+Function signature and return variables, left members and expressions refer to
+variables. A variable is made of an identifier, a type and a kind. In the AST a
+variable doesn't have to be declared in order to be used. Across a function
+body, parameters and returned variables, all variables featuring the same
+identifier are considered to be the same. A variable kind is either stack or
+register. It indicates where the variable is stored.
+
+\smallskip
+
+A type can be a word of some size (a power of 2 bytes) or an array of some
+length over words of some size. Arrays are indexed by two means, the first is
+by considering the array as cells of some size, the other is by considering it
+as a sequence of bytes (independently of the size of the data being accessed at
+the index).
+
+Arrays can be built out of other arrays by taking a slice. A slice is a
+contiguous section of some length at an offset of the begining of an array.
+
+\smallskip
+
+A left members is either a variable, a cell of an array variable, a slice of an
+array variable, a memory cell or the forget TODO is forget called this way.
+
+An array cell is indexed by an expression, its size is a word size. An array
+slice length and offset are expressions, the cell size is a word size. A memory
+cell is an array cell but the base array is the process memory instead of a
+variable. The forget left member does not store the value it is assigned.
+
+An expression can be a constant word, an empty array, a variable, a cell of an
+array variable, a slice of an array variable or a memory cell. Operations are
+also expressions made of other expressions.
+
+\subsection{Array expansion in Jasmin compiler}
+
+A variable of type array and kind register means an array of register, but in
+most common processor on which ??? programs are run there is no hardware support
+for register indexing outside of the processor instruction opcode. Therefore we
+need to eliminate them in some compilation step; this is what the array
+expansion step does in the Jasmin compiler. Other kind of arrays are not
+expanded --even though we could expand them-- because there is hardware support
+for the operation performed on them and so we consider users know what they want.
+
+\medskip
+
+We want to replace all store and load operations on an array. There are two way
+to index on array as described in the previous section. The accesses where the
+index is an offset in bytes from the start of the array would require
+concatenating parts of registers together on loads or assigning portions of a
+value into portions of registers on stores. While this is completely possible we
+do not want to provide it so a program with this access scheme used on a
+register array will fail to compile.
+The accesses we have to deal with are of three kind: single cell indexing,
+array slicing and whole array access.
+
+\smallskip
+
+Assume we want to expand an array into variables. Single cell indexing can be
+resolved to a single variable when the index is a constant. Otherwise we do not
+support it. The exception is when the index is a for loop variable, in which
+case at this compilation step it is a constant because loop unrolling has
+already been performed.
+Currently only this part is implemented in Jasmin.
+
+Whole array access can be resolved either by introducing a real array on which
+the operation is performed, or when the operation can be unrolled by unrolling
+it and using the method for single cell indexing. We won't introduce
+intermediate arrays because we do not want to incur hidden costs. If the user
+wants to introduce an intermediate array they can and the resulting operation
+can be unrolled. 
+
+Finally array slicing would only be supported when the parameters of the slice
+are constant. In this case the slice is a new array and the variable it is
+replaced by is a slice with the same parameters of the variables by which the
+original array would be replaced by.
+
+\smallskip
+
+Another kind of expansion not falling under the above cases is when a function
+takes a register array as argument. In this case we instead take as many
+register variables as necessary instead of the array.
+That transformation is only wanted when the function is not exported to the
+other programs because we do not want to make such changes unbeknown to the
+user. Jasmin could either warn the user or as we implemented it, fail to
+compile the program.
+Only array expansion for internal functions will be implemented in this article
+even though our changes enables the other unimplemented expansion above.
+
+
+\section{Semantics aspect of array expansion}\label{sec:semantics}
+
+\subsection{Relevant parts of Jasmin semantics}
+
+% TODO: présenter les règles pertinnentes du jugement (grand pas) sem
+% Ces règles sont: 
+% Présentation des sémantiques actuelle des valeurs (array never undef) et des
+% sémantiques (sur des exemples puis pour) des appels de fonctions
+
+\subsection{Semantic implications of array expansion}
+
+% Présenter la problématique introduite par cette transformation qui la rendrait
+% improuvable puis les pistes de modifications.
+
+
+\section{}
+% Présentation des modifications de la sémantique au niveau des fonctions ainsi
+% que des varmap, avec les propriétés importantes et l'élimination des types
+% dépendants pour justifier les choix. Et de la transformation effectuée.
+
+\section{Conclusion}
+% Présentation du travail restant dans le stage ainsi que potentiellement après
+% le stage: FIXER LES PREUVES
+
+\end{document}
