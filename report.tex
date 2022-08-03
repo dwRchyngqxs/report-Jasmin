@@ -14,6 +14,7 @@
 \usepackage{hyperref}
 \usepackage{enumitem}
 \setlist{nosep,leftmargin=*}
+\frenchspacing
 
 \newcommand\setR{\mathbb{R}}
 \newcommand\setZ{\mathbb{Z}}
@@ -22,6 +23,8 @@
 \title{Array expansion in function arguments and return values}
 \author{Quentin \textsc{Corradi}}
 \setlength{\parindent}{0pt}
+
+% TODO: biblio (array contraction)
 
 \begin{document}
 
@@ -56,7 +59,7 @@ The Jasmin language is close to assembly, the main differences lies in:
 \item Jasmin abstracts numerical operations common in cryptography
 \item Jasmin provides variables and performs variable allocation in registers
 \item Jasmin supports arrays
-\item Jasmin provides common control flow structures
+\item Jasmin provides common control flow statements
 \item Jasmin provides functions with support for C calling convention if needed
 \end{itemize}\smallskip
 
@@ -96,6 +99,9 @@ presented then the semantic side of array expansion is explored.
 
 \subsection{Introduction to relevant parts of Jasmin syntax}
 
+In this section, the relevant parts of Jasmin programs are described. The
+irrelevant parts, if mentioned, will not be expanded upon.
+
 \begin{figure}
 \obeylines\obeyspaces\ttfamily%
 type ty =
@@ -121,15 +127,14 @@ type expr =
 | Pload  of wsize \(\times\) var \(\times\) expr
 
 type lval =
-| Lnone of ty
+| Lnone
 | Lvar  of var
 | Lmem  of wsize \(\times\) var \(\times\) expr
 | Laset of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
 | Lasub of arr\_access \(\times\) wsize \(\times\;\setZ\;\times\) var \(\times\) expr
 
 type instr =
-| Cassgn of lval \(\times\) ty \(\times\) expr
-| Copn   of lval list \(\times\) Sopn.sopn \(\times\) expr list
+| Cassgn of lval \(\times\) expr
 | Ccall  of lval list \(\times\) uid \(\times\) expr list
 
 type call\_conv =
@@ -145,12 +150,9 @@ type func = \{
 \}
 
 type prog = func list
-
-\caption{Simplified version of the relevant parts of Jasmin programs AST}
+\normalfont%
+\caption{Simplified version of the relevant parts of Jasmin programs AST.}
 \end{figure}
-
-In this section, the relevant parts of Jasmin programs are described. The
-irrelevant parts, if mentionned, will not be expanded upon.
 
 A Jasmin progam is a list of functions among other things. A function is made
 among other things of its name, a unique identifier; its parameters, a list of
@@ -160,15 +162,16 @@ in which case the function must follow some calling convention, or internal.
 
 \smallskip
 
-A statement can be an assignment, a function call and Copn TODO.
-Control flow are also statements made of statements among other things.
+A statement can be an assignment or a function call.
+Other statements include assembly instructions and control flow statements,
+however they are not relavant to us.
 
 An assignment is made of a left member and an expression. A function call is
 made of the called function identifier, a list of left members matching the
 function returned variables list on length, and a list of expression matching
-the function parameters list on length. Copn TODO is made of a list of left members and a list of expressions.
+the function parameters list on length.
 
-Function signature and return variables, left members and expressions refer to
+Function arguments and return variables, left members and expressions refer to
 variables. A variable is made of an identifier, a type and a kind. In the AST a
 variable doesn't have to be declared in order to be used. Across a function
 body, parameters and returned variables, all variables featuring the same
@@ -189,12 +192,12 @@ contiguous section of some length at an offset of the begining of an array.
 \smallskip
 
 A left members is either a variable, a cell of an array variable, a slice of an
-array variable, a memory cell or the forget TODO is forget called this way.
+array variable, a memory cell or the discard.
 
 An array cell is indexed by an expression, its size is a word size. An array
 slice length and offset are expressions, the cell size is a word size. A memory
 cell is an array cell but the base array is the process memory instead of a
-variable. The forget left member does not store the value it is assigned.
+variable. The discard left member does not store the value it is assigned.
 
 An expression can be a constant word, an empty array, a variable, a cell of an
 array variable, a slice of an array variable or a memory cell. Operations are
@@ -260,8 +263,140 @@ even though our changes enables the other unimplemented expansion above.
 
 \subsection{Relevant parts of Jasmin semantics}
 
-% TODO: présenter les règles pertinnentes du jugement (grand pas) sem
-% Ces règles sont: 
+In this section, the relevant parts of Jasmin semantics are described.
+
+\begin{figure}
+\obeylines\obeyspaces\ttfamily%
+Variant value :=
+~ | Varr  n : array n \(\rightarrow\) value
+~ | Vword s : word  s \(\rightarrow\) value.
+
+Definition sem\_t t :=
+~ match t with
+~ | Arr  n \(\Rightarrow\) array n
+~ | Word s \(\Rightarrow\) word  s
+~ end.
+\normalfont%
+\caption{Simplified value types.}\label{fig:val}
+\end{figure}
+
+Jasmin values can be words and pratially defined arrays of words. Variables value
+are stored using the dependant type \texttt{sem\_t} as defined in Figure
+\ref{fig:val} in order to keep the invariant
+\texttt{m.[x] = Ok v \(\rightarrow\) type\_of\_val v = v\_ty x}.
+
+\begin{figure}
+\obeylines\obeyspaces\ttfamily%
+Definition to\_arr  n v := if v is Varr  n t then Ok t else Error.
+
+Definition to\_word s v := if v is Vword s w then Ok w else Error.
+
+Definition to\_val t : sem\_t t \(\rightarrow\) value :=
+~ match t return sem\_t t \(\rightarrow\) value with
+~ | Arr  n \(\Rightarrow\) Varr  n
+~ | Word s \(\Rightarrow\) Vword s
+~ end.
+\normalfont%
+\caption{Value conversion between \texttt{value} and \texttt{sem\_t}.}
+\end{figure}
+
+\begin{figure}
+\obeylines\obeyspaces\ttfamily%
+Fixpoint sem\_pexpr s e :=
+~ match e with
+~ | Pconst z \(\Rightarrow\) Ok (Vword z)
+~ | Parr\_init n \(\Rightarrow\) Ok (Varr n (empty n))
+~ | Pvar v \(\Rightarrow\) s.[v]
+~ | Pget aa ws x e \(\Rightarrow\)
+~   Let Varr n t := s.[x] in
+~   Let i := sem\_pexpr s e >{}>= to\_word in
+~   Let w := get aa ws t i in
+~   Ok (Vword w)
+~ | Psub aa ws len x e \(\Rightarrow\)
+~   Let Varr n t := s.[x] in
+~   Let i := sem\_pexpr s e >{}>= to\_word in
+~   Let t' := get\_sub aa ws len t i in
+~   Ok (Varr len t')
+~ end.
+
+Definition write\_lval l v s :=
+~ match l with
+~ | Lnone \(\Rightarrow\) Ok s
+~ | Lvar x \(\Rightarrow\) s.[x \(\leftarrow\) v]
+~ | Laset aa ws x i \(\Rightarrow\)
+~   Let Varr n t := s.[x] in
+~   Let i := sem\_pexpr s i >{}>= to\_word in
+~   Let v := to\_word ws v in
+~   Let t := set t aa i v in
+~   s.[x \(\leftarrow\) to\_val (Arr n) t]
+~ | Lasub aa ws len x i \(\Rightarrow\)
+~   Let Varr n t := s.[x] in
+~   Let i := sem\_pexpr s i >{}>= to\_word in
+~   Let t' := to\_arr (ws * len) v in 
+~   Let t := set\_sub n aa ws len t i t' in
+~   s.[x \(\leftarrow\) to\_val (Arr n) t]
+~ end.
+\normalfont%
+\caption{On the top: function evaluating expression; %
+On the bottom: function affecting left members.}
+\end{figure}
+
+% TODO: présenter les règles d'evaluation des expressions et les règles des
+% left-members
+
+\begin{figure}
+\ttfamily
+sem\_call P :
+\begin{center}
+\begin{tabular}{c}
+get\_func P fn = Some f \\
+fold2 (\(\lambda\)x v, s.[x \(\leftarrow\) v]) (f\_args f) vargs empty = Ok s1 \\
+sem P s1 (f\_body f) s2 \\
+mapM (\(\lambda\)x, s2.[x]) (f\_ret f) = Ok vres
+\\\hline
+sem\_call P fn vargs vres
+\end{tabular}
+\end{center}
+
+sem P :
+\begin{center}
+\begin{tabular}{c}
+\\\hline
+sem P s [::] s
+\end{tabular} Eskip\quad
+\begin{tabular}{c}
+sem\_i P s1 i s2\quad
+sem P s2 l s3
+\\\hline
+sem P s1 (i::l) s3
+\end{tabular} Eseq
+\end{center}
+
+sem\_i P :
+\begin{center}
+\begin{tabular}{c}
+sem\_pexpr s1 e = Ok v\quad
+write\_lval x v s1 = Ok s2
+\\\hline
+sem\_i P s1 (Cassgn x e) s2
+\end{tabular} Eassgn
+
+~
+
+\begin{tabular}{c}
+sem\_pexprs s1 args = Ok vargs \\
+sem\_call P f vargs vres \\
+write\_lvals s1 xs vres = Ok s2
+\\\hline
+sem\_i P s1 (Ccall xs f args) s2.
+\end{tabular} \raisebox{-\baselineskip}{Ecall}
+\end{center}
+\normalfont%
+\caption{Inductive big step semantics rules.}
+\end{figure}
+% TODO: Présenter les règles de la bigstepsem
+
+
 % Présentation des sémantiques actuelle des valeurs (array never undef) et des
 % sémantiques (sur des exemples puis pour) des appels de fonctions
 
