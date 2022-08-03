@@ -119,7 +119,7 @@ type var = \{
 \}
 
 type expr =
-| Pconst of \(\setZ\)
+| Pconst of wsize \(\times\;\setZ\)
 | Parr\_init of \(\setZ\)
 | Pvar   of var
 | Pget   of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
@@ -280,13 +280,19 @@ Definition sem\_t t :=
 \caption{Simplified value types.}\label{fig:val}
 \end{figure}
 
-Jasmin values can be words and pratially defined arrays of words. Variables value
+Jasmin values can be words and partially defined arrays of words. Variables value
 are stored using the dependant type \texttt{sem\_t} as defined in Figure
 \ref{fig:val} in order to keep the invariant
 \texttt{m.[x] = Ok v \(\rightarrow\) type\_of\_val v = v\_ty x}.
 
 \begin{figure}
 \obeylines\obeyspaces\ttfamily%
+Definition type\_of\_val v :=
+~ match v with
+~ | Vword s \_ \(\Rightarrow\) Word s
+~ | Varr  n \_ \(\Rightarrow\) Arr  n
+~ end.
+
 Definition to\_arr  n v := if v is Varr  n t then Ok t else Error.
 
 Definition to\_word s v := if v is Vword s w then Ok w else Error.
@@ -297,14 +303,16 @@ Definition to\_val t : sem\_t t \(\rightarrow\) value :=
 ~ | Word s \(\Rightarrow\) Vword s
 ~ end.
 \normalfont%
-\caption{Value conversion between \texttt{value} and \texttt{sem\_t}.}
+\caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
 \end{figure}
+
+\medskip
 
 \begin{figure}
 \obeylines\obeyspaces\ttfamily%
 Fixpoint sem\_pexpr s e :=
 ~ match e with
-~ | Pconst z \(\Rightarrow\) Ok (Vword z)
+~ | Pconst s z \(\Rightarrow\) Ok (Vword s z)
 ~ | Parr\_init n \(\Rightarrow\) Ok (Varr n (empty n))
 ~ | Pvar v \(\Rightarrow\) s.[v]
 ~ | Pget aa ws x e \(\Rightarrow\)
@@ -337,12 +345,42 @@ Definition write\_lval l v s :=
 ~   s.[x \(\leftarrow\) to\_val (Arr n) t]
 ~ end.
 \normalfont%
-\caption{On the top: function evaluating expression; %
-On the bottom: function affecting left members.}
+\caption{Top: function evaluating expression e in context s; %
+Bottom: function modifying context s with value v according to left member l.}
 \end{figure}
 
-% TODO: présenter les règles d'evaluation des expressions et les règles des
-% left-members
+Semantics of expressions is a partial function taking a context and an
+expression and returning a value.
+The semantic of constant is the constant word value. The semantic of empty array
+is the array value where no indicies are defined. The sematic of a variable is
+the value associated to that variable in the context if there is one. The
+semantic of indexing an array variable is the word value associated to the word
+at the index given by the semantic of the index expression --if its semantic
+is defined-- of the array associated to the variable in the context if it is an
+array and the value at that index --for the given array access scheme-- is
+defined. The semantic of slicing an array variable is the array value obtained
+by slicing the array associated to the variable in the context --if it is an
+array-- using the array access scheme given and the semantics of the slicing
+parameters if their semantics are defined.
+
+\smallskip
+
+Semantics of left members is a partial function taking a left member, a value
+and a context, and returns a context.
+The semantic of the discard is the unchanged context. The semantic of a variable
+is the context where the variable is now associated to the given value if its
+type is the same as the variable. The semantic of an array indexing 
+% TODO: présenter la sématique des left members
+%semantic of indexing an array variable is the word value associated to the word
+%at the index given by the semantic of the index expression --if its semantic
+%is defined-- of the array associated to the variable in the context if it is an
+%array and the value at that index --for the given array access scheme-- is
+%defined. The semantic of slicing an array variable is the array value obtained
+%by slicing the array associated to the variable in the context --if it is an
+%array-- using the array access scheme given and the semantics of the slicing
+%parameters if their semantics are defined.
+
+\medskip
 
 \begin{figure}
 \ttfamily
@@ -394,6 +432,12 @@ sem\_i P s1 (Ccall xs f args) s2.
 \normalfont%
 \caption{Inductive big step semantics rules.}
 \end{figure}
+
+The semantics of Jasmin functions and instructions are big step inductive
+predicates. The first relates functions, their arguments and returned values,
+the second relates two contexts and an instruction.
+
+
 % TODO: Présenter les règles de la bigstepsem
 
 
@@ -402,6 +446,8 @@ sem\_i P s1 (Ccall xs f args) s2.
 
 \subsection{Semantic implications of array expansion}
 
+% Présenter tous les cas qui fonctionnent d'array expansion puis tous les cas
+qui ne fonctionnent pas (tranformation syntaxique et sémantique)
 % Présenter la problématique introduite par cette transformation qui la rendrait
 % improuvable puis les pistes de modifications.
 
