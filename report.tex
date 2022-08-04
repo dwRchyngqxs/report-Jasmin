@@ -467,137 +467,141 @@ In this section the syntactic and semantics changes of all the cases for array
 expansion are described, and the semantic implication of such changes are
 discussed.
 
-\begin{figure}
-Fixpoint expand_e m e := 
-  match e, to_expand m x with
-  | Pvar x, false => Ok (Pvar x)
-  | Pvar _, true => (* currently *) Error
-  | Pget aa ws x e1, false =>
-      Let e1 := expand_e m e1 in
-      Ok (Pget aa ws x e1)
-  | Pget aa ws x e1, true =>
-    match Mvar.get m.(sarrs) x, is_const e1 with
-    | Some ai, Some i =>
-      Let _ := assert (ai.(ai_ty) == ws) (reg_error x "(the default scale must be used)") in
-      Let _ := assert (aa == AAscale) (reg_error x "(the default scale must be used)") in
-      match Mi.get ai.(ai_elems) i with
-      | Some v => Ok (Pvar (mk_lvar {| v_var := v; v_info := v_info x |}))
-      | _ => Error (reg_ierror x "the new variable was not given")
-      end 
-    | _, _ => Error (reg_error x "(the index is not a constant)")
-    end
-  | Psub aa ws len x e1, false =>
-    Let e1 := expand_e m e1 in
-    Ok (Psub aa ws len x e1)
-  | Psub aa ws len x e1, true => (* currently *) Error
-  end.
+\begin{figure} % TODO: not the right member names
+\obeylines\obeyspaces\ttfamily%
+Fixpoint expand\_e m e := 
+~ match e, to\_expand m x with
+~ | Pvar x, false => Ok (Pvar x)
+~ | Pvar x, true => (* currently *) Error
+~   (* should be *) Ok (expand m x)
+~ | Pget aa ws x e1, false =>
+~   Let e1 := expand\_e m e1 in
+~   Ok (Pget aa ws x e1)
+~ | Pget aa ws x e1, true => % TODO: awful structure
+~   match Mvar.get m.(sarrs) x, is\_const e1 with
+~   | Some ai, Some i =>
+~     Let \_ := assert (ai.(ai\_ty) == ws) in
+~     Let \_ := assert (aa == AAscale) in
+~     match Mi.get ai.(ai\_elems) i with
+~     | Some v => Ok (Pvar {| v\_var := v; v\_info := v\_info x |})
+~     | \_ => Error
+~     end 
+~   | \_, \_ => Error
+~   end
+~ | Psub aa ws len x e1, false =>
+~   Let e1 := expand\_e m e1 in
+~   Ok (Psub aa ws len x e1)
+~ | Psub aa ws len x e1, true => (* currently *) Error
+~   (* TODO: should be sth like the above *)
+~ end.
 
-Definition expand_lv m x :=
-  match x, to_expand m x with
-  | Lnone, _ => Ok x
-  | Lvar x, false => Ok (Lvar x)
-  | Lvar x, true => (* currently *) Error
-  | Laset aa ws x e, false =>
-    Let e := expand_e m e in
-    Ok (Laset aa ws x e)
-  | Laset aa ws x e, true =>
-    match Mvar.get m.(sarrs) x, is_const e with
-    | Some ai, Some i =>
-      Let _ := assert (ai.(ai_ty) == ws) (reg_error x "(the default scale must be used)") in
-      Let _ := assert (aa == AAscale) (reg_error x "(the default scale must be used)") in
-      match Mi.get ai.(ai_elems) i with
-      | Some v => ok (Lvar {| v_var := v; v_info := v_info x |})
-      | _ => Error (reg_ierror x "the new variable was not given")
-      end 
-    | _, _ => Error (reg_error x "(the index is not a constant)")
-    end
-  | Lasub aa ws len x e, false =>
-    Let e := expand_e m e in
-    Ok (Lasub aa ws len x e)
-  | Lasub aa ws len x e, true => (* currently *) Error
-  end.
+Definition expand\_lv m x :=
+~ match x, to\_expand m x with
+~ | Lnone, \_ => Ok x
+~ | Lvar x, false => Ok (Lvar x)
+~ | Lvar x, true => (* currently *) Error
+~ | Laset aa ws x e, false =>
+~   Let e := expand\_e m e in
+~   Ok (Laset aa ws x e)
+~ | Laset aa ws x e, true => % TODO: awful structure
+~   match Mvar.get m.(sarrs) x, is\_const e with
+~   | Some ai, Some i =>
+~     Let \_ := assert (ai.(ai\_ty) == ws) in
+~     Let \_ := assert (aa == AAscale) in
+~     match Mi.get ai.(ai\_elems) i with
+~     | Some v => ok (Lvar {| v\_var := v; v\_info := v\_info x |})
+~     | \_ => Error
+~     end 
+~   | \_, \_ => Error
+~   end
+~ | Lasub aa ws len x e, false =>
+~   Let e := expand\_e m e in
+~   Ok (Lasub aa ws len x e)
+~ | Lasub aa ws len x e, true => (* currently *) Error
+~ end.
 
-Definition expand_param (m: t) ex (e: pexpr) : cexec _ :=
-  let erre {A} x := @Error _ A (reg_ierror (gv x) "variable cannot be expanded")
-in
-  let expf ae x ws i :=
-    oapp (fun v => ok (Pvar (mk_lvar (VarI v (v_info (gv x))))))
-      (erre x) (Mi.get ae i) in
-  match ex with
-  | Some (ws, len) => if e is Pvar x then oapp (fun ai =>
-        if [&& ws == ai_ty ai, len == ai_len ai & is_lvar x]
-        then mapM (expf (ai_elems ai) x ws) (ziota 0 len)
-        else Error (reg_ierror (gv x) "type mismatch"))
-      (erre x) (Mvar.get m.(sarrs) (gv x))
-    else Error (reg_ierror_no_var "only variables can be expanded in function
-arguments")
-  | None => rmap (fun x => [:: x]) (expand_e m e)
-  end.
+Definition expand\_param m ex e :=
+~ let expf ae x ws i :=
+~   oapp (fun v => ok (Pvar (VarI v (v\_info x))))
+~     (Mi.get ae i) in
+~ match ex with
+~ | Some (ws, len) => if e is Pvar x then oapp (fun ai =>
+~       if ws == ai\_ty ai \&\& len == ai\_len ai
+~       then mapM (expf (ai\_elems ai) x ws) (ziota 0 len)
+~       else Error)
+~     (Mvar.get m.(sarrs) x)
+~   else Error
+~ | None => rmap (fun x => [:: x]) (expand\_e m e)
+~ end.
 
-Definition expand_return m ex x :=
-  let erre {A} x := @Error _ A (reg_ierror x "variable cannot be expanded") in
-  let expf ae (x: var_i) ws i :=
-    oapp (fun v => ok (Lvar (VarI v (v_info x)))) (erre x) (Mi.get ae i) in
-  match ex with
-  | Some (ws, len) => match x with
-    | Lnone v t => ok (nseq (Z.to_nat len) (Lnone v (sword ws)))
-    | Lvar x => oapp (fun ai =>
-      if [&& ws == ai_ty ai & len == ai_len ai]
-      then mapM (expf (ai_elems ai) x ws) (ziota 0 len)
-      else Error (reg_ierror x "type mismatch")) (erre x) (Mvar.get m.(sarrs) x)
-    | _ => Error (reg_ierror_no_var "only variables and forget can be expanded
-in function return")
-    end
-  | None => rmap (fun x => [:: x]) (expand_lv m x)
-  end.
+Definition expand\_return m ex x :=
+~ let expf ae x ws i :=
+~   oapp (fun v => ok (Lvar (VarI v (v\_info x)))) (Mi.get ae i) in
+~ match ex with
+~ | Some (ws, len) => match x with
+~   | Lnone v t => Ok (nseq (Z.to\_nat len) (Lnone v (sword ws)))
+~   | Lvar x => oapp (fun ai =>
+~     if ws == ai\_ty ai \&\& len == ai\_len ai
+~     then mapM (expf (ai\_elems ai) x ws) (ziota 0 len)
+~     else Error) (Mvar.get m.(sarrs) x)
+~   | \_ => Error
+~   end
+~ | None => rmap (fun x => [:: x]) (expand\_lv m x)
+~ end.
 
-Fixpoint expand_i (fsigs: expd_t) (m: t) (i: instr) : cexec instr :=
-  let (ii,ir) := i in
-  match ir with
-  | Cassgn x tag ty e =>
-    Let x := add_iinfo ii (expand_lv m x) in
-    Let e := add_iinfo ii (expand_e m e) in
-    ok (MkI ii (Cassgn x tag ty e))
+Fixpoint expand\_i fsigs m i :=
+~ match i with
+~ | Cassgn x tag ty e =>
+~   Let x := expand\_lv m x in
+~   Let e := expand\_e m e in
+~   ok (MkI ii (Cassgn x tag ty e))
+~ | Ccall ini xs fn es =>
+~   if Mfn.get fsigs fn is Some (expdin, expdout) then
+~     Let xs := rmap flatten (mapM2 (expand\_return m) expdout xs) in
+~     Let es := rmap flatten (mapM2 (expand\_param m) expdin es) in
+~     Ok (MkI ii (Ccall ini xs fn es))
+~   else Error
+~ end.
 
-  | Ccall ini xs fn es =>
-    if Mfn.get fsigs fn is Some (expdin, expdout) then
-      Let xs := add_iinfo ii (rmap flatten (mapM2 length_mismatch (expand_return
-m) expdout xs)) in
-      Let es := add_iinfo ii (rmap flatten (mapM2 length_mismatch (expand_param
-m) expdin es)) in
-      ok (MkI ii (Ccall ini xs fn es))
-    else Error (reg_ierror_no_var "function not found")
-  end.
+Definition expand\_vars m v :=
+~ if Mvar.get m.(sarrs) v is Some ai then
+~   Let vexpd := mapM (fun i => oapp (fun v' => ok (VarI v' (v\_info v)))
+~     (Mi.get (ai\_elems ai) i)) (ziota 0 (ai\_len ai)) in
+~   ok (vexpd, Some (ai\_ty ai, Z.of\_nat (size vexpd)))
+~ else ok ([:: v], None).
 
-Definition expand_tyv m ty v :=
-  if Mvar.get m.(sarrs) (v_var v) is Some ai then
-    Let vexpd := mapM (fun i => oapp (fun v' => ok (VarI v' (v_info v), vtype
-v'))
-      (Error (reg_ierror v "missing expand info for an index"))
-      (Mi.get (ai_elems ai) i)) (ziota 0 (ai_len ai)) in
-    let '(vvars, vtypes) := unzip12 vexpd in
-    ok (vtypes, vvars, Some (ai_ty ai, Z.of_nat (size vtypes)))
-  else ok ([:: ty], [:: v], None).
+Definition expand\_fsig m (fname: funname) (fd: ufundef) :=
+~ match fd with
+~ | MkFun fi params c res =>
+~   Let (params, expdin) := rmap unzip12 (mapM2 (expand\_vars m) params) in
+~   Let (res, expdout) := rmap unzip12 (mapM2 (expand\_tyv m) res) in
+~   Ok (MkFun fi (flatten params) c (flatten res), m, (expdin, expdout))
+~ end.
 
-Definition expand_fsig fi (fname: funname) (fd: ufundef) :=
-  Let m := init_map (fi fname fd) in
-  match fd with
-  | MkFun fi tyin params c tyout res ef =>
-    Let ins := rmap (@unzip12 _ _) (mapM2 length_mismatch (expand_tyv m) tyin
-params) in
-    let (tyin, params) := unzip12 ins.1 in
-    Let outs := rmap (@unzip12 _ _) (mapM2 length_mismatch (expand_tyv m) tyout
-res) in
-    let (tyout, res) := unzip12 outs.1 in
-    ok (MkFun fi (flatten tyin) (flatten params) c (flatten tyout) (flatten res)
-ef,
-      m, (ins.2, outs.2))
-  end.
+Definition eval\_array ws v i :=
+~ if v is Varr \_ t
+~ then rmap Vword (WArray.get AAscale ws t i)
+~ else Error.
 
+Definition eq\_alloc\_vm (m : t) vm1 vm2 :=
+~ vm1 =[m.(svars)] vm2 /\
+~ forall x ai i xi,
+~   Mvar.get m.(sarrs) x = Some ai ->
+~   Mi.get ai.(ai\_elems) i = Some xi ->
+~   eval\_array ai.(ai\_ty) vm1.[x] i = Ok vm2.[xi].
+
+Definition expand\_v expd v :=
+~ match expd with
+~ | Some (ws, len) => mapM (eval\_array ws v) (ziota 0 len)
+~ | None => ok [:: v]
+~ end.
+\normalfont%
+\caption{TODO}
 \end{figure}
 
-% Présenter tous les cas qui fonctionnent d'array expansion puis tous les cas
-% qui ne fonctionnent pas (tranformation syntaxique et sémantique)
+% Présenter tous les cas simples sans necessiter de 1->many qui fonctionnent
+% d'array expansion puis tous les cas 1->many qui du coup ne fonctionnent pas
+% (tranformation syntaxique et sémantique)
 % Présenter la problématique introduite par cette transformation qui la rendrait
 % improuvable puis les pistes de modifications.
 
