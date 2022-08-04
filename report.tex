@@ -24,7 +24,7 @@
 \author{Quentin \textsc{Corradi}}
 \setlength{\parindent}{0pt}
 
-% TODO: biblio (array contraction)
+% TODO: biblio (Jasmin articles, array contraction)
 
 \begin{document}
 
@@ -422,7 +422,7 @@ sem\_i P s1 (Cassgn x e) s2
 ~
 
 \begin{tabular}{c}
-sem\_pexprs s1 args = Ok vargs \\
+mapM (sem\_pexpr s1) args = Ok vargs \\
 sem\_call P f vargs vres \\
 write\_lvals s1 xs vres = Ok s2
 \\\hline
@@ -433,16 +433,29 @@ sem\_i P s1 (Ccall xs f args) s2.
 \caption{Inductive big step semantics rules.}
 \end{figure}
 
-The semantics of Jasmin functions and instructions are big step inductive
-predicates. The first relates functions, their arguments and returned values,
-the second relates two contexts and an instruction.
+The semantics of Jasmin functions and instructions in a program are big step
+inductive predicates. The former relates functions, their arguments and returned
+values, the latter relates two contexts and an instruction.
 
+The semantics of a function call in a program is a predicate relating a function
+identifier, its arguments values and its returned values. The only rule is made
+of four conditions: the identifier is bound to of functions of the program, the
+function bound to this identifier takes as many parameters as the argument given
+and binding the arguments to the parameters on an empty context gives a valid
+context, the semantics of the statements extended to a list relate this valid
+context another context, and in this latter context the value associated to the
+return values of the function correspond to the return values of the jugement.
 
-% TODO: Présenter les règles de la bigstepsem
+\smallskip
 
+The semantics of a statement relates an instruction, an initial context and the
+context after executing this statement. The two rules relevant to us are the
+rules for assignment and function call, giving a semantics to the corresponding
+statements. The rule for assignments relates an initial context and the assignment
+statement with the semantics of the left member of the assignment where the
+value is the semantics of the expression of the assignment. The rule for a
+function call relates the function call satement and an initial state to % TODO
 
-% Présentation des sémantiques actuelle des valeurs (array never undef) et des
-% sémantiques (sur des exemples puis pour) des appels de fonctions
 
 \subsection{Semantic implications of array expansion}
 
