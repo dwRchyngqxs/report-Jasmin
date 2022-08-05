@@ -94,16 +94,8 @@ presented then the semantic side of array expansion is explored.
  Présentation du travail restant dans le stage ainsi que potentiellement après
  le stage: FIXER LES PREUVES
 
-
-\section{Array expansion compiler pass}\label{sec:syntax}
-
-\subsection{Introduction to relevant parts of Jasmin syntax}
-
-In this section, the relevant parts of Jasmin programs are described. The
-irrelevant parts, if mentioned, will not be expanded upon.
-
-\begin{figure}[p]
-\obeylines\obeyspaces\ttfamily%
+\begin{figure}[!b]
+\obeylines\obeyspaces\fbox{\parbox{\textwidth}{\ttfamily%
 type ty =
 | Word of wsize
 | Arr  of wsize \(\times\;\setZ\)
@@ -147,10 +139,17 @@ type func = \{
 ~ f\_ret  : var list;
 \}
 
-type prog = func list
-\normalfont%
-\caption{Simplified version of the relevant parts of Jasmin programs AST.}
+type prog = func list}}
+\caption{Simplified version of the relevant parts of Jasmin programs AST.}\label{fig:types}
 \end{figure}
+
+
+\section{Array expansion compiler pass}\label{sec:syntax}
+
+\subsection{Introduction to relevant parts of Jasmin syntax}
+
+In this section, the relevant parts of Jasmin programs are described. The
+irrelevant parts, if mentioned, will not be expanded upon.
 
 A Jasmin progam is a list of functions among other things. A function is made
 among other things of its name, a unique identifier; its parameters, a list of
@@ -200,8 +199,6 @@ An expression can be a constant word, an empty array, a variable, a cell of an
 array variable or a slice of an array variable. Operations are also expressions
 made of other expressions.
 
-\subsection{Array expansion in Jasmin compiler}
-
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
 Fixpoint expand\_e m e := 
@@ -232,6 +229,9 @@ Definition expand\_lv m x :=
 \normalfont%
 \caption{Simplified version of expression and left member expansion in Jasmin.}
 \end{figure}
+
+\subsection{Array expansion in Jasmin compiler}
+
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 Fixpoint expand\_e m e := 
@@ -303,39 +303,6 @@ array slicing and whole array access.
 
 \smallskip
 
-Assume we want to expand an array into variables. Single cell indexing can be
-resolved to a single variable when the index is a constant. Otherwise we do not
-support it. The exception is when the index is a for loop variable, in which
-case at this compilation step it is a constant because loop unrolling has
-already been performed.
-Currently only this part is implemented in Jasmin.
-
-Whole array access can be resolved either by introducing a real array on which
-the operation is performed, or when the operation can be unrolled by unrolling
-it and using the method for single cell indexing. We won't introduce
-intermediate arrays because we do not want to incur hidden costs. If the user
-wants to introduce an intermediate array they can and the resulting operation
-can be unrolled.
-
-Finally array slicing would only be supported when the parameters of the slice
-are constant. In this case the slice is a new array and the variable it is
-replaced by is a slice with the same parameters of the variables by which the
-original array would be replaced by.
-
-\smallskip
-
-In practise we could perform these expansions in expressions and left members
-as explained using a function returning a list of expressions/left members and
-by checking the array is a single value in the recursive cases. The assignment
-would then match the left members with the right members. If this fails we have
-a register array on one side and a non register array on the other side, so the
-unroll could be done by indexing each cell of the shorter list as long if it is
-a variable or a sub array, or duplicating the discard. The other cases would
-duplicate an operation so they instead would fail to compile to not introduce
-hidden costs.
-
-\medskip
-
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 Definition expand\_e\_n m e n :=
@@ -384,16 +351,26 @@ Definition expand\_ret m ex x :=
 \caption{Expansion of argument expression and left member returns.}
 \end{figure}
 
-There is another kind of expansion when a function takes some register arrays as
-parameters. In this case we instead take as many register variables as necessary
-instead of the array. That transformation is only wanted when the function is
-not exported to the other programs because we do not want to make such changes
-unbeknown to the user. Jasmin could either warn the user or fail to compile the
-program as we implemented it.
-Only array expansion for internal functions will be implemented in this article
-even though our changes enables the other unimplemented expansion above.
-In practise the expansion of all function signatures needs to be performed first
-to know which argument should be expanded when a function is called.
+Assume we want to expand an array into variables. Single cell indexing can be
+resolved to a single variable when the index is a constant. Otherwise we do not
+support it. The exception is when the index is a for loop variable, in which
+case at this compilation step it is a constant because loop unrolling has
+already been performed.
+Currently only this part is implemented in Jasmin.
+
+Whole array access can be resolved either by introducing a real array on which
+the operation is performed, or when the operation can be unrolled by unrolling
+it and using the method for single cell indexing. We won't introduce
+intermediate arrays because we do not want to incur hidden costs. If the user
+wants to introduce an intermediate array they can and the resulting operation
+can be unrolled.
+
+Finally array slicing would only be supported when the parameters of the slice
+are constant. In this case the slice is a new array and the variable it is
+replaced by is a slice with the same parameters of the variables by which the
+original array would be replaced by.
+
+\smallskip
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
@@ -420,12 +397,31 @@ Fixpoint expand\_i fexpd m i :=
 \caption{Expansion of statements.}
 \end{figure}
 
+In practise we could perform these expansions in expressions and left members
+as explained using a function returning a list of expressions/left members and
+by checking the array is a single value in the recursive cases. The assignment
+would then match the left members with the right members. If this fails we have
+a register array on one side and a non register array on the other side, so the
+unroll could be done by indexing each cell of the shorter list as long if it is
+a variable or a sub array, or duplicating the discard. The other cases would
+duplicate an operation so they instead would fail to compile to not introduce
+hidden costs.
+
+\medskip
+
+There is another kind of expansion when a function takes some register arrays as
+parameters. In this case we instead take as many register variables as necessary
+instead of the array. That transformation is only wanted when the function is
+not exported to the other programs because we do not want to make such changes
+unbeknown to the user. Jasmin could either warn the user or fail to compile the
+program as we implemented it.
+Only array expansion for internal functions will be implemented in this article
+even though our changes enables the other unimplemented expansion above.
+In practise the expansion of all function signatures needs to be performed first
+to know which argument should be expanded when a function is called.
+
 
 \section{Semantics aspect of array expansion}\label{sec:semantics}
-
-\subsection{Relevant parts of Jasmin semantics}
-
-In this section, the relevant parts of Jasmin semantics are described.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
@@ -442,12 +438,9 @@ Definition sem\_t t :=
 \caption{Simplified value types.}\label{fig:val}
 \end{figure}
 
-Jasmin values can be words and partially defined arrays of words. Variables value
-are stored using the dependant type \texttt{sem\_t} as defined in Figure
-\ref{fig:val} in order to keep the invariant
-\texttt{m.[x] = Ok v\(\implies\)type\_of\_val v = v\_ty x}.
+\subsection{Relevant parts of Jasmin semantics}
 
-\begin{figure}
+\begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
 Definition type\_of\_val v :=
 ~ match v with
@@ -468,9 +461,16 @@ Definition to\_val t : sem\_t t \(\rightarrow\) value :=
 \caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
 \end{figure}
 
+In this section, the relevant parts of Jasmin semantics are described.
+
+Jasmin values can be words and partially defined arrays of words. Variables value
+are stored using the dependant type \texttt{sem\_t} as defined in Figure
+\ref{fig:val} in order to keep the invariant
+\texttt{m.[x] = Ok v\(\implies\)type\_of\_val v = v\_ty x}.
+
 \medskip
 
-\begin{figure}
+\begin{figure}[!t]
 \obeylines\obeyspaces\ttfamily%
 Fixpoint sem\_pexpr s e :=
 ~ match e with
@@ -544,7 +544,7 @@ type is the same as the variable. The semantic of an array indexing
 
 \medskip
 
-\begin{figure}
+\begin{figure}[t]
 \ttfamily
 sem\_call P :
 \begin{center}
@@ -629,25 +629,58 @@ In this section the syntactic and semantics changes of all the cases for array
 expansion are described, and the semantic implication of such changes are
 discussed.
 
-\begin{figure}
+\begin{figure}[tp] % TODO
 \obeylines\obeyspaces\ttfamily%
-Definition eval\_array ws v i :=
-~ if v is Varr \_ t
-~ then rmap Vword (WArray.get AAscale ws t i)
-~ else Error.
+Definition eval\_array v i :=
+~ if v is Varr ws t then rmap Vword (WArray.get AAscale ws t i) else Error.
 
-Definition eq\_alloc\_vm (m : t) vm1 vm2 :=
-~ vm1 =[m.(svars)] vm2 /\
-~ forall x ai i xi,
-~   Mvar.get m.(sarrs) x = Some ai ->
-~   Mi.get ai.(ai\_elems) i = Some xi ->
-~   eval\_array ai.(ai\_ty) vm1.[x] i = Ok vm2.[xi].
+Definition eq\_alloc\_vm m vm1 vm2 : Prop :=
+~ forall x, match get m x with
+~ | Some vx \(\Rightarrow\) forall i vi,
+~   get vx i = Some vi \(\Longrightarrow\) eval\_array vm1.[x] i = Ok vm2.[vi]
+~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
+~ end.
 
 Definition expand\_v expd v :=
 ~ match expd with
-~ | Some (ws, len) => mapM (eval\_array ws v) (ziota 0 len)
-~ | None => ok [:: v]
+~ | Some n \(\Rightarrow\) mapM (eval\_array v) (iota 0 n)
+~ | None   \(\Rightarrow\) ok [:: v]
 ~ end.
+
+Lemma expand_eP (s1 s2: estate) :
+  eq_alloc m s1 s2 ->
+  forall e1 e2, expand_e m e1 = ok e2 -> 
+  forall v, sem_pexpr gd s1 e1 = ok v ->
+            sem_pexpr gd s2 e2 = ok v.
+
+Lemma expand_paramsP (s1 s2 : estate) e expdin :
+  eq_alloc m s1 s2 ->
+  forall es1 es2 vs, mapM2 e (expand_param m) expdin es1 = ok es2 ->
+    sem_pexprs gd s1 es1 = ok vs ->
+    exists2 vs', expand_vs expdin vs = ok vs' &
+      sem_pexprs gd s2 (flatten es2) = ok (flatten vs').
+
+Lemma expand_lvP (s1 s2 : estate) :
+  eq_alloc m s1 s2 ->
+  forall x1 x2, expand_lv m x1 = ok x2 ->
+  forall v s1',
+    write_lval gd x1 v s1 = ok s1' ->
+    exists2 s2', write_lval gd x2 v s2 = ok s2' & eq_alloc m s1' s2'.
+
+Lemma expand_returnsP (s1 s2 : estate) e expdout :
+  eq_alloc m s1 s2 ->
+  forall xs1 xs2, mapM2 e (expand_return m) expdout xs1 = ok xs2 ->
+  forall vs vs' s1',
+    write_lvals gd s1 xs1 vs = ok s1' ->
+    expand_vs expdout vs = ok vs' ->
+    exists2 s2', write_lvals gd s2 (flatten xs2) (flatten vs') = ok s2' &
+      eq_alloc m s1' s2'.
+
+Let Pfun scs m fn vargs scs' m' vres :=
+  forall expdin expdout, Mfn.get fsigs fn = Some (expdin, expdout) ->
+  forall vargs', expand_vs expdin vargs = ok vargs' ->
+  exists2 vres', expand_vs expdout vres = ok vres' &
+    sem_call p2 ev scs m fn (flatten vargs') scs' m' (flatten vres').
 \normalfont%
 \caption{TODO}
 \end{figure}
