@@ -634,32 +634,28 @@ discussed.
 Definition eval\_array v i :=
 ~ if v is Varr ws t then rmap Vword (WArray.get AAscale ws t i) else Error.
 
-Definition eq\_alloc\_vm m vm1 vm2 : Prop :=
-~ forall x, match get m x with
-~ | Some vx \(\Rightarrow\) forall i vi,
-~   get vx i = Some vi \(\Longrightarrow\) eval\_array vm1.[x] i = Ok vm2.[vi]
-~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
-~ end.
-
 Definition expand\_v expd v :=
 ~ match expd with
 ~ | Some n \(\Rightarrow\) mapM (eval\_array v) (iota 0 n)
 ~ | None   \(\Rightarrow\) ok [:: v]
 ~ end.
 
+Definition eq\_alloc m vm1 vm2 : Prop :=
+~ forall x, match get m x with
+~ | Some vx \(\Rightarrow\) forall i vi,
+~   get vx i = Some vi \(\Longrightarrow\) eval\_array vm1.[x] i = Ok vm2.[vi]
+~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
+~ end.
+
+% TODO: for sem_pexpr, duplicate for the case inl and inr
 Lemma expand_eP (s1 s2: estate) :
   eq_alloc m s1 s2 ->
   forall e1 e2, expand_e m e1 = ok e2 -> 
   forall v, sem_pexpr gd s1 e1 = ok v ->
+    exists2 vs', expand_vs vs = ok vs' &
             sem_pexpr gd s2 e2 = ok v.
 
-Lemma expand_paramsP (s1 s2 : estate) e expdin :
-  eq_alloc m s1 s2 ->
-  forall es1 es2 vs, mapM2 e (expand_param m) expdin es1 = ok es2 ->
-    sem_pexprs gd s1 es1 = ok vs ->
-    exists2 vs', expand_vs expdin vs = ok vs' &
-      sem_pexprs gd s2 (flatten es2) = ok (flatten vs').
-
+% TODO: for write_lval, duplicate for the case inl and inr
 Lemma expand_lvP (s1 s2 : estate) :
   eq_alloc m s1 s2 ->
   forall x1 x2, expand_lv m x1 = ok x2 ->
@@ -667,20 +663,19 @@ Lemma expand_lvP (s1 s2 : estate) :
     write_lval gd x1 v s1 = ok s1' ->
     exists2 s2', write_lval gd x2 v s2 = ok s2' & eq_alloc m s1' s2'.
 
-Lemma expand_returnsP (s1 s2 : estate) e expdout :
-  eq_alloc m s1 s2 ->
-  forall xs1 xs2, mapM2 e (expand_return m) expdout xs1 = ok xs2 ->
-  forall vs vs' s1',
-    write_lvals gd s1 xs1 vs = ok s1' ->
-    expand_vs expdout vs = ok vs' ->
-    exists2 s2', write_lvals gd s2 (flatten xs2) (flatten vs') = ok s2' &
-      eq_alloc m s1' s2'.
-
+% TODO: for sem_call
 Let Pfun scs m fn vargs scs' m' vres :=
   forall expdin expdout, Mfn.get fsigs fn = Some (expdin, expdout) ->
   forall vargs', expand_vs expdin vargs = ok vargs' ->
   exists2 vres', expand_vs expdout vres = ok vres' &
     sem_call p2 ev scs m fn (flatten vargs') scs' m' (flatten vres').
+
+% TODO: for sem_i
+Let Pi_r s1 (i1:instr_r) s2:=
+  forall ii m ii' i2 s1' z,
+	  wf_t m -> eq_alloc m s1 s1' ->
+		  expand_i z m (MkI ii i1) = ok (MkI ii' i2) ->
+			exists2 s2', eq_alloc m s2 s2' & sem_i p2 ev s1' i2 s2'.
 \normalfont%
 \caption{TODO}
 \end{figure}
