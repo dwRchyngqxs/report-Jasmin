@@ -98,7 +98,7 @@ presented then the semantic side of array expansion is explored.
 \obeylines\obeyspaces\fbox{\parbox{\textwidth}{\ttfamily%
 type ty =
 | Word of wsize
-| Arr  of wsize \(\times\;\setZ\)
+| Arr  of wsize \(\times\;\setN\)
 
 type v\_kind =
 | Stack of pointer
@@ -112,16 +112,16 @@ type var = \{
 
 type expr =
 | Pconst of wsize \(\times\;\setZ\)
-| Parr\_init of \(\setZ\)
+| Parr\_init of wsize \(\times\;\setN\)
 | Pvar   of var
-| Pget   of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
-| Psub   of arr\_access \(\times\) wsize \(\times\;\setZ\;\times\) var \(\times\) expr
+| Pget   of arr\_access \(\times\) var \(\times\) expr
+| Psub   of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
 
 type lval =
 | Lnone
 | Lvar  of var
-| Laset of arr\_access \(\times\) wsize \(\times\) var \(\times\) expr
-| Lasub of arr\_access \(\times\) wsize \(\times\;\setZ\;\times\) var \(\times\) expr
+| Laset of arr\_access \(\times\) var \(\times\) expr
+| Lasub of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
 
 type instr =
 | Cassgn of lval \(\times\) expr
@@ -204,26 +204,26 @@ made of other expressions.
 Fixpoint expand\_e m e := 
 ~ match e with
 ~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Pvar x)
-~ | Pget aa ws x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Pvar v)
 ~     else Error else Error
-~   else Let e := expand\_e m e in Ok (Pget aa ws x e)
-~ | Psub aa ws len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
-~   else Let e := expand\_e m e in Ok (Psub aa ws len x e)
+~   else Let e := expand\_e m e in Ok (Pget aa x e)
+~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
+~   else Let e := expand\_e m e in Ok (Psub aa len x e)
 ~ | \_ \(\Rightarrow\) Ok e
 ~ end.
 
 Definition expand\_lv m x :=
 ~ match x with
 ~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Lvar x)
-~ | Laset aa ws x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Lvar v)
 ~     else Error else Error
-~   else Let e := expand\_e m e in Ok (Laset aa ws x e)
-~ | Lasub aa ws len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
-~   else Let e := expand\_e m e in Ok (Lasub aa ws len x e)
+~   else Let e := expand\_e m e in Ok (Laset aa x e)
+~ | Lasub aa len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
+~   else Let e := expand\_e m e in Ok (Lasub aa len x e)
 ~ | \_ \(\Rightarrow\) Ok x
 ~ end.
 \normalfont%
@@ -238,12 +238,12 @@ Fixpoint expand\_e m e :=
 ~ match e with
 ~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
-~ | Pget aa ws x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inr [:: Pvar v ])
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Pget aa ws x e))
-~ | Psub aa ws len x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~   else Let inl e := expand\_e m e in Ok (inl (Pget aa x e))
+~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
 ~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
@@ -255,15 +255,15 @@ Definition expand\_lv m x :=
 ~ match x with
 ~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
-~ | Laset aa ws x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inr [:: Lvar v ])
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Laset aa ws x e))
-~ | Lasub aa ws len x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~   else Let inl e := expand\_e m e in Ok (inl (Laset aa x e))
+~ | Lasub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then Ok (inr [:: Lvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Lasub aa ws len x e))
+~   else Let inl e := expand\_e m e in Ok (inl (Lasub aa len x e))
 ~ | \_ \(\Rightarrow\) Ok (inl x)
 ~ end.
 
@@ -307,12 +307,11 @@ array slicing and whole array access.
 \obeylines\obeyspaces\ttfamily%
 Definition expand\_e\_n m e n :=
 ~ match e with
-~ | Pvar (\{| v\_id; v\_kind; v\_ty := Arr ws len |\} as x) \(\Rightarrow\)
-~   if len == n then Ok (mkseq n \(\lambda\)i, Pget AAscale ws v (Pconst U64 i)) else Error
-~ | Psub aa ws len (\{ v\_id; v\_kind; v\_ty := Arr ws len |\} as x) e \(\Rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\) if len == n
-~     then Ok (mkseq n \(\lambda\)i, Pget aa ws v (Padd e (Pconst U64 (i * ws))))
-~     else Error
+~ | Pvar (\{| v\_ty := Arr s \_ |\} as x) \(\Rightarrow\)
+~   Ok (mkseq n \(\lambda\)i, Pget AAscale v (Pconst U64 i))
+~ | Psub aa len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\Rightarrow\) match e with
+~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\)
+~     Ok (mkseq n \(\lambda\)i, Pget aa v (Padd e (Pconst U64 (i * s))))
 ~   | \_ \(\Rightarrow\) Error
 ~   end
 ~ | \_ \(\Rightarrow\) Error
@@ -321,12 +320,11 @@ Definition expand\_e\_n m e n :=
 Definition expand\_lv\_n m x n :=
 ~ match x with
 ~ | Lnone \(\Rightarrow\) Ok (nseq n Lnone)
-~ | Lvar (\{| v\_id; v\_kind; v\_ty := Arr ws len |\} as v) \(\Rightarrow\) if len == n
-~   then Ok (mkseq n \(\lambda\)i, Laset AAscale ws v (Pconst U64 i)) else Error
-~ | Lasub aa ws len (\{ v\_id; v\_kind; v\_ty := Arr ws len |\} as x) e \(\Rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\) if len == n
-~     then Ok (mkseq n \(\lambda\)i, Laset aa ws v (Padd e (Pconst U64 (i * ws))))
-~     else Error
+~ | Lvar (\{| v\_ty := Arr s \_ |\} as v) \(\Rightarrow\)
+~   Ok (mkseq n \(\lambda\)i, Laset AAscale v (Pconst U64 i))
+~ | Lasub aa len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\Rightarrow\) match e with
+~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\)
+~     Ok (mkseq n \(\lambda\)i, Laset aa v (Padd e (Pconst U64 (i * s))))
 ~   | \_ \(\Rightarrow\) Error
 ~   end
 ~ | \_ \(\Rightarrow\) Error
@@ -390,7 +388,7 @@ Fixpoint expand\_i fexpd m i :=
 ~   if get fexpd fn is Some (expargs, expret) then
 ~     Let xs := mapM2 (expand\_ret m) expargs xs in
 ~     Let es := mapM2 (expand\_arg m) expret  es in
-~     Ok (Ccall (flatten xs) fn (flatten es))
+~     Ok [:: Ccall (flatten xs) fn (flatten es) ]
 ~   else Error
 ~ end.
 \normalfont%
@@ -426,13 +424,13 @@ to know which argument should be expanded when a function is called.
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
 Variant value :=
-~ | Varr  n : array n \(\rightarrow\) value
-~ | Vword s : word  s \(\rightarrow\) value.
+~ | Varr s n : array s n \(\rightarrow\) value
+~ | Vword s  : word  s   \(\rightarrow\) value.
 
 Definition sem\_t t :=
 ~ match t with
-~ | Arr  n \(\Rightarrow\) array n
-~ | Word s \(\Rightarrow\) word  s
+~ | Arr s n \(\Rightarrow\) array s n
+~ | Word s  \(\Rightarrow\) word  s
 ~ end.
 \normalfont%
 \caption{Simplified value types.}\label{fig:val}
@@ -444,18 +442,18 @@ Definition sem\_t t :=
 \obeylines\obeyspaces\ttfamily%
 Definition type\_of\_val v :=
 ~ match v with
-~ | Vword s \_ \(\Rightarrow\) Word s
-~ | Varr  n \_ \(\Rightarrow\) Arr  n
+~ | Vword s  \_ \(\Rightarrow\) Word s
+~ | Varr s n \_ \(\Rightarrow\) Arr s n
 ~ end.
 
-Definition to\_arr  n v := if v is Varr  n t then Ok t else Error.
+Definition to\_arr  n v := if v is Varr s n t then Ok t else Error.
 
-Definition to\_word s v := if v is Vword s w then Ok w else Error.
+Definition to\_word s v := if v is Vword s  w then Ok w else Error.
 
 Definition to\_val t : sem\_t t \(\rightarrow\) value :=
 ~ match t return sem\_t t \(\rightarrow\) value with
-~ | Arr  n \(\Rightarrow\) Varr  n
-~ | Word s \(\Rightarrow\) Vword s
+~ | Arr s n \(\Rightarrow\) Varr s n
+~ | Word s  \(\Rightarrow\) Vword s
 ~ end.
 \normalfont%
 \caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
@@ -472,42 +470,42 @@ are stored using the dependant type \texttt{sem\_t} as defined in Figure
 
 \begin{figure}[!t]
 \obeylines\obeyspaces\ttfamily%
-Fixpoint sem\_pexpr s e :=
+Fixpoint sem\_pexpr vm e :=
 ~ match e with
 ~ | Pconst s z \(\Rightarrow\) Ok (Vword s (wrepr s z))
-~ | Parr\_init n \(\Rightarrow\) Ok (Varr n (empty n))
-~ | Pvar v \(\Rightarrow\) s.[v]
-~ | Pget aa ws x e \(\Rightarrow\)
-~   Let Varr n t := s.[x] in
-~   Let i := sem\_pexpr s e >{}>= to\_word in
-~   Let w := get aa ws t i in
-~   Ok (Vword w)
-~ | Psub aa ws len x e \(\Rightarrow\)
-~   Let Varr n t := s.[x] in
-~   Let i := sem\_pexpr s e >{}>= to\_word in
-~   Let t' := get\_sub aa ws len t i in
-~   Ok (Varr len t')
+~ | Parr\_init s n \(\Rightarrow\) Ok (Varr s n (empty s n))
+~ | Pvar v \(\Rightarrow\) vm.[v]
+~ | Pget aa x e \(\Rightarrow\)
+~   Let Varr s n t := vm.[x] in
+~   Let i := sem\_pexpr vm e >{}>= to\_int in
+~   Let w := get aa t i in
+~   Ok (Vword s w)
+~ | Psub aa len x e \(\Rightarrow\)
+~   Let Varr s n t := vm.[x] in
+~   Let i := sem\_pexpr vm e >{}>= to\_int in
+~   Let t' := get\_sub aa len t i in
+~   Ok (Varr s len t')
 ~ end.
 
-Definition write\_lval l v s :=
+Definition write\_lval l v vm :=
 ~ match l with
 ~ | Lnone \(\Rightarrow\) Ok s
-~ | Lvar x \(\Rightarrow\) s.[x \(\leftarrow\) v]
-~ | Laset aa ws x i \(\Rightarrow\)
-~   Let Varr n t := s.[x] in
-~   Let i := sem\_pexpr s i >{}>= to\_word in
-~   Let v := to\_word ws v in
-~   Let t := set t aa i v in
-~   s.[x \(\leftarrow\) to\_val (Arr n) t]
-~ | Lasub aa ws len x i \(\Rightarrow\)
-~   Let Varr n t := s.[x] in
-~   Let i := sem\_pexpr s i >{}>= to\_word in
-~   Let t' := to\_arr (ws * len) v in 
-~   Let t := set\_sub n aa ws len t i t' in
-~   s.[x \(\leftarrow\) to\_val (Arr n) t]
+~ | Lvar x \(\Rightarrow\) vm.[x \(\leftarrow\) v]
+~ | Laset aa x i \(\Rightarrow\)
+~   Let Varr s n t := vm.[x] in
+~   Let i := sem\_pexpr vm i >{}>= to\_int in
+~   Let w := to\_word s v in
+~   Let t := set t aa i w in
+~   vm.[x \(\leftarrow\) to\_val (Arr s n) t]
+~ | Lasub aa len x i \(\Rightarrow\)
+~   Let Varr s n t := vm.[x] in
+~   Let i := sem\_pexpr vm i >{}>= to\_int in
+~   Let t' := to\_arr s len v in 
+~   Let t := set\_sub n aa len t i t' in
+~   vm.[x \(\leftarrow\) to\_val (Arr s len) t]
 ~ end.
 \normalfont%
-\caption{Top: function evaluating expression e in context s; %
+\caption{Top: function evaluating expression e in context vm; %
 Bottom: function modifying context s with value v according to left member l.}
 \end{figure}
 
@@ -519,11 +517,12 @@ the value associated to that variable in the context if there is one. The
 semantic of indexing an array variable is the word value associated to the word
 at the index given by the semantic of the index expression --if its semantic
 is defined-- of the array associated to the variable in the context if it is an
-array and the value at that index --for the given array access scheme-- is
-defined. The semantic of slicing an array variable is the array value obtained
-by slicing the array associated to the variable in the context --if it is an
-array-- using the array access scheme given and the semantics of the slicing
-parameters if their semantics are defined.
+array and the value at that index for the given array access scheme is defined
+and in bounds. The semantic of slicing an array variable is the array value
+obtained by slicing the array associated to the variable in the context --if it
+is an array-- using the array access scheme and length given and the semantics
+of the starting offset expression if its semantic is defined and the slice is in
+bounds.
 
 \smallskip
 
@@ -531,16 +530,16 @@ Semantics of left members is a partial function taking a left member, a value
 and a context, and returns a context.
 The semantic of the discard is the unchanged context. The semantic of a variable
 is the context where the variable is now associated to the given value if its
-type is the same as the variable. The semantic of an array indexing 
-% TODO: présenter la sématique des left members
-%semantic of indexing an array variable is the word value associated to the word
-%at the index given by the semantic of the index expression --if its semantic
-%is defined-- of the array associated to the variable in the context if it is an
-%array and the value at that index --for the given array access scheme-- is
-%defined. The semantic of slicing an array variable is the array value obtained
-%by slicing the array associated to the variable in the context --if it is an
-%array-- using the array access scheme given and the semantics of the slicing
-%parameters if their semantics are defined.
+type is the same as the variable. The semantic of indexing an array variable is
+the context where the array associated to the variable --if it is an array-- has
+its cell given by the array access scheme and the semantic of the index
+expression --if its semantic is defined and in bounds-- is is now associated to
+the given value if its type is the correct word type. The semantic of slicing an
+array variable is the context where each cell of the array variable --if it is
+an array-- intersecting with the slice obtained using the array access scheme
+and length given and the semantic of the starting offset expression --if its
+semantic is defined and the slice is in bounds-- is now associated to the right
+word of the given value if it is an array of the right length.
 
 \medskip
 
@@ -550,9 +549,9 @@ sem\_call P :
 \begin{center}
 \begin{tabular}{c}
 get\_func P fn = Some f \\
-fold2 (\(\lambda\)x v, s.[x \(\leftarrow\) v]) (f\_args f) vargs empty = Ok s1 \\
-sem P s1 (f\_body f) s2 \\
-mapM (\(\lambda\)x, s2.[x]) (f\_ret f) = Ok vres
+fold2 (\(\lambda\)x v, vm.[x \(\leftarrow\) v]) (f\_args f) vargs empty = Ok vm1 \\
+sem P vm1 (f\_body f) vm2 \\
+mapM (\(\lambda\)x, vm2.[x]) (f\_ret f) = Ok vres
 \\\hline
 sem\_call P fn vargs vres
 \end{tabular}
@@ -562,33 +561,33 @@ sem P :
 \begin{center}
 \begin{tabular}{c}
 \\\hline
-sem P s [::] s
+sem P vm [::] vm
 \end{tabular} Eskip\quad
 \begin{tabular}{c}
-sem\_i P s1 i s2\quad
-sem P s2 l s3
+sem\_i P vm1 i vm2\quad
+sem P vm2 l vm3
 \\\hline
-sem P s1 (i::l) s3
+sem P vm1 (i::l) vm3
 \end{tabular} Eseq
 \end{center}
 
 sem\_i P :
 \begin{center}
 \begin{tabular}{c}
-sem\_pexpr s1 e = Ok v\quad
-write\_lval x v s1 = Ok s2
+sem\_pexpr vm1 e = Ok v\quad
+write\_lval x v vm1 = Ok vm2
 \\\hline
-sem\_i P s1 (Cassgn x e) s2
+sem\_i P vm1 (Cassgn x e) vm2
 \end{tabular} Eassgn
 
 ~
 
 \begin{tabular}{c}
-mapM (sem\_pexpr s1) args = Ok vargs \\
+mapM (sem\_pexpr vm1) args = Ok vargs \\
 sem\_call P f vargs vres \\
-fold2 write\_lval s1 xs vres = Ok s2
+fold2 write\_lval xs vres vm1 = Ok vm2
 \\\hline
-sem\_i P s1 (Ccall xs f args) s2.
+sem\_i P vm1 (Ccall xs f args) vm2.
 \end{tabular} \raisebox{-\baselineskip}{Ecall}
 \end{center}
 \normalfont%
@@ -629,53 +628,60 @@ In this section the syntactic and semantics changes of all the cases for array
 expansion are described, and the semantic implication of such changes are
 discussed.
 
-\begin{figure}[tp] % TODO
+\begin{figure}[tp]
 \obeylines\obeyspaces\ttfamily%
-Definition eval\_array v i :=
-~ if v is Varr ws t then rmap Vword (WArray.get AAscale ws t i) else Error.
+Definition eval\_array t i :=
+~ rmap Vword (WArray.get AAscale t i).
 
 Definition expand\_v expd v :=
 ~ match expd with
-~ | Some n \(\Rightarrow\) mapM (eval\_array v) (iota 0 n)
-~ | None   \(\Rightarrow\) ok [:: v]
+~ | true  \(\Rightarrow\) if v is Arr s n t then mapM (eval\_array t) (iota 0 n) else Error
+~ | false \(\Rightarrow\) Ok [:: v ]
 ~ end.
 
 Definition eq\_alloc m vm1 vm2 : Prop :=
-~ forall x, match get m x with
-~ | Some vx \(\Rightarrow\) forall i vi,
-~   get vx i = Some vi \(\Longrightarrow\) eval\_array vm1.[x] i = Ok vm2.[vi]
+~ \(\forall\)x, match get m x with
+~ | Some vx \(\Rightarrow\) \(\forall\)i vi,
+~   get vx i = Some vi \(\Longrightarrow\) Let Varr s n t := vm1.[x] in eval\_array t i = vm2.[vi]
 ~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
 ~ end.
 
-% TODO: for sem_pexpr, duplicate for the case inl and inr
-Lemma expand_eP (s1 s2: estate) :
-  eq_alloc m s1 s2 ->
-  forall e1 e2, expand_e m e1 = ok e2 -> 
-  forall v, sem_pexpr gd s1 e1 = ok v ->
-    exists2 vs', expand_vs vs = ok vs' &
-            sem_pexpr gd s2 e2 = ok v.
+Lemma expand\_ePl m vm1 vm2 :
+~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
+~ \(\forall\)e1 e2, expand\_e m e1 = Ok (inl e2) \(\Longrightarrow\)
+~ \(\forall\)v, sem\_pexpr vm1 e1 = Ok v \(\Longrightarrow\) sem\_pexpr vm2 e2 = Ok v.
 
-% TODO: for write_lval, duplicate for the case inl and inr
-Lemma expand_lvP (s1 s2 : estate) :
-  eq_alloc m s1 s2 ->
-  forall x1 x2, expand_lv m x1 = ok x2 ->
-  forall v s1',
-    write_lval gd x1 v s1 = ok s1' ->
-    exists2 s2', write_lval gd x2 v s2 = ok s2' & eq_alloc m s1' s2'.
+Lemma expand\_ePr m vm1 vm2 :
+~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
+~ \(\forall\)e1 es2, expand\_e m e1 = Ok (inr es2) \(\Longrightarrow\)
+~ \(\forall\)v, sem\_pexpr vm1 e1 = Ok v \(\Longrightarrow\)
+~ \(\exists\)vs, expand\_v true v = Ok vs \(\wedge\) mapM2 sem\_pexpr vm2 es2 = Ok vs.
 
-% TODO: for sem_call
-Let Pfun scs m fn vargs scs' m' vres :=
-  forall expdin expdout, Mfn.get fsigs fn = Some (expdin, expdout) ->
-  forall vargs', expand_vs expdin vargs = ok vargs' ->
-  exists2 vres', expand_vs expdout vres = ok vres' &
-    sem_call p2 ev scs m fn (flatten vargs') scs' m' (flatten vres').
+Lemma expand\_lvPl m vm1 vm2 :
+~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
+~ \(\forall\)x1 x2, expand\_lv m x1 = Ok (inl x2) \(\Longrightarrow\)
+~ \(\forall\)v vm1', write\_lval x1 v vm1 = Ok vm1' \(\Longrightarrow\)
+~ \(\exists\)vm2', write\_lval x2 v vm2 = Ok vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
 
-% TODO: for sem_i
-Let Pi_r s1 (i1:instr_r) s2:=
-  forall ii m ii' i2 s1' z,
-	  wf_t m -> eq_alloc m s1 s1' ->
-		  expand_i z m (MkI ii i1) = ok (MkI ii' i2) ->
-			exists2 s2', eq_alloc m s2 s2' & sem_i p2 ev s1' i2 s2'.
+Lemma expand\_lvPr m vm1 vm2 :
+~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
+~ \(\forall\)x1 xs2, expand\_lv m x1 = Ok (inr xs2) \(\Longrightarrow\)
+~ \(\forall\)v vm1', write\_lval x1 v vm1 = Ok vm1' \(\Longrightarrow\)
+~ \(\exists\)vs, expand\_v true v = Ok vs \(\wedge\)
+~   \(\exists\)vm2', fold2 write\_lval xs2 vs vm2 = Ok vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
+
+Lemma expand\_funcP P1 P2 fexpd fn vargs vret :=
+~ sem\_call P1 fn vargs vret \(\Longrightarrow\)
+~ \(\forall\)expdin expdout, get fexpd fn = Some (expargs, expret) \(\Longrightarrow\)
+~ \(\forall\)vargs', mapM (expand\_v \(\circ\) is\_some) expargs vargs = Ok vargs' \(\Longrightarrow\)
+~ \(\exists\)vret', mapM (expand\_v \(\circ\) is\_some) expret  vret  = Ok vret'  \(\wedge\)
+~   sem\_call P2 fn (flatten vargs') (flatten vres').
+
+Lemma expand\_iP P1 P2 fexpd m vm1 vm2 :=
+~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
+~ \(\forall\)i1 vm1', sem\_i P1 vm1 i1 vm1' \(\Longrightarrow\)
+~ \(\forall\)is2, expand\_i fexpd m i1 = Ok is2 \(\Longrightarrow\)
+~ \(\exists\)vm2', sem P2 vm2 is2 vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
 \normalfont%
 \caption{TODO}
 \end{figure}
