@@ -51,9 +51,9 @@ simple variable accesses.
 
 \smallskip
 
-Jasmin is a compiler targetted at ???.
- Jasmin est un compilateur utilisé pour la crypto, il est associé d'une preuve
- de correction et de préservation de constant-time.
+Jasmin is a compiler and a language designed for writing high-assurance and
+high-speed cryptography primitives. The semantics is formally defined to allow
+rigorous reasoning about program behaviors.
 The Jasmin language is close to assembly, the main differences lies in:
 \begin{itemize}
 \item Jasmin abstracts numerical operations common in cryptography
@@ -61,21 +61,25 @@ The Jasmin language is close to assembly, the main differences lies in:
 \item Jasmin supports arrays
 \item Jasmin provides common control flow statements
 \item Jasmin provides functions with support for C calling convention if needed
+\item Jasmin presents assembly instruction with a functional style to avoid
+hidden side effects
 \end{itemize}\smallskip
 
 In Jasmin there are two kind of variables, the stack allocated ones and the
 register allocated ones. The user has to tell the compiler the kind of every
 variables. This also holds true for arrays. However on most processor on which
-people run ??? software there is no hardware support for indexing registers with
-a value not encoded in the instruction. So some compilation step eliminates
-these arrays.
+people run cryptographic primitives and software, there is no hardware support
+for indexing registers with a value not encoded in the instruction. So some
+compilation step eliminates these arrays.
 
 \smallskip
 
 In this article we did not implement most of the array expansion the Jasmin
-compiler already performs. Instead we extended this transformation for some
-previously unsupported cases, namely expanding register arrays in function
-arguments and return values. 
+compiler already performs. Instead we implemented this transformation on
+function signature and function call for register arrays, and we studied how
+more array expansion could be performed in particluar for assignments.
+
+% TODO: related word
 
 \medskip
 
@@ -85,14 +89,11 @@ presented then the syntactic side of array expansion is explained more in-depth
 for our intended use in Jasmin.
 In Section \ref{sec:semantics} the relevant parts of Jasmin semantics are
 presented then the semantic side of array expansion is explored.
-% TODO: In section \ref{sec:???}
-
- Présentation des modifications de la sémantique au niveau des fonctions ainsi
- que des varmap, avec les propriétés importantes et l'élimination des types
- dépendants pour justifier les choix. Et de la transformation effectuée.
-
- Présentation du travail restant dans le stage ainsi que potentiellement après
- le stage: FIXER LES PREUVES
+In Section \ref{sec:perch} we describe and justify a change we made to the core
+of Jasmin semantics and the consequent changes we had to make in order to
+accomodate it and reprove the correctness theorems.
+Finally in Section \ref{sec:ccl} the unfinished parts of the work are described
+and % TODO: YOU KNOW, CONCLUDE!
 
 \begin{figure}[!b]
 \obeylines\obeyspaces\fbox{\parbox{\textwidth}{\ttfamily%
@@ -240,7 +241,7 @@ Fixpoint expand\_e m e :=
 ~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
 ~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
-~     if e is Pconst \_ z then if get vx z is Some v then Ok (inr [:: Pvar v ])
+~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Pvar v))
 ~     else Error else Error
 ~   else Let inl e := expand\_e m e in Ok (inl (Pget aa x e))
 ~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
@@ -257,7 +258,7 @@ Definition expand\_lv m x :=
 ~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
 ~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
 ~     assert (aa == AAscale) in
-~     if e is Pconst \_ z then if get vx z is Some v then Ok (inr [:: Lvar v ])
+~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Lvar v))
 ~     else Error else Error
 ~   else Let inl e := expand\_e m e in Ok (inl (Laset aa x e))
 ~ | Lasub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
@@ -411,10 +412,14 @@ There is another kind of expansion when a function takes some register arrays as
 parameters. In this case we instead take as many register variables as necessary
 instead of the array. That transformation is only wanted when the function is
 not exported to the other programs because we do not want to make such changes
-unbeknown to the user. Jasmin could either warn the user or fail to compile the
-program as we implemented it.
-Only array expansion for internal functions will be implemented in this article
-even though our changes enables the other unimplemented expansion above.
+unbeknown to the user. On top of that the global correction theorem would have
+to reflect modifications on these exported functions. Jasmin could either warn
+the user or fail to compile the program as we implemented it.
+
+Only array expansion for internal functions has been implemented before the
+redaction of this article even though our changes enables the other
+unimplemented expansion above.
+
 In practise the expansion of all function signatures needs to be performed first
 to know which argument should be expanded when a function is called.
 
@@ -459,7 +464,9 @@ Definition to\_val t : sem\_t t \(\rightarrow\) value :=
 \caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
 \end{figure}
 
-In this section, the relevant parts of Jasmin semantics are described.
+In this section, the relevant parts of Jasmin semantics are described. None of
+it is part of our contribution but it is a necessary part in order to understand
+the main properties we have to prove for the compiler.
 
 Jasmin values can be words and partially defined arrays of words. Variables value
 are stored using the dependant type \texttt{sem\_t} as defined in Figure
@@ -609,7 +616,7 @@ return values of the function correspond to the return values of the jugement.
 
 \smallskip
 
-The semantics of a statement relates an instruction, an initial context and the
+The semantics of a statement relates a statement, an initial context and the
 context after executing this statement. The two rules relevant to us are the
 rules for assignment and function call, giving a semantics to the corresponding
 statements. The rule for assignments relates an initial context and the assignment
@@ -624,11 +631,10 @@ expressions in the initial context.
 
 \subsection{Semantic implications of array expansion}
 
-In this section the syntactic and semantics changes of all the cases for array
-expansion are described, and the semantic implication of such changes are
-discussed.
+In this section the semantics changes of all the cases for array expansion are
+described and their implications are discussed.
 
-\begin{figure}[tp]
+\begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 Definition eval\_array t i :=
 ~ rmap Vword (WArray.get AAscale t i).
@@ -641,8 +647,8 @@ Definition expand\_v expd v :=
 
 Definition eq\_alloc m vm1 vm2 : Prop :=
 ~ \(\forall\)x, match get m x with
-~ | Some vx \(\Rightarrow\) \(\forall\)i vi,
-~   get vx i = Some vi \(\Longrightarrow\) Let Varr s n t := vm1.[x] in eval\_array t i = vm2.[vi]
+~ | Some vx \(\Rightarrow\) \(\forall\)i vi, get vx i = Some vi \(\Longrightarrow\)
+~   (Let Varr s n t := vm1.[x] in eval\_array t i) = vm2.[vi]
 ~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
 ~ end.
 
@@ -674,7 +680,7 @@ Lemma expand\_funcP P1 P2 fexpd fn vargs vret :=
 ~ sem\_call P1 fn vargs vret \(\Longrightarrow\)
 ~ \(\forall\)expdin expdout, get fexpd fn = Some (expargs, expret) \(\Longrightarrow\)
 ~ \(\forall\)vargs', mapM (expand\_v \(\circ\) is\_some) expargs vargs = Ok vargs' \(\Longrightarrow\)
-~ \(\exists\)vret', mapM (expand\_v \(\circ\) is\_some) expret  vret  = Ok vret'  \(\wedge\)
+~ \(\exists\)vret',  mapM (expand\_v \(\circ\) is\_some) expret  vret  = Ok vret'  \(\wedge\)
 ~   sem\_call P2 fn (flatten vargs') (flatten vres').
 
 Lemma expand\_iP P1 P2 fexpd m vm1 vm2 :=
@@ -683,29 +689,93 @@ Lemma expand\_iP P1 P2 fexpd m vm1 vm2 :=
 ~ \(\forall\)is2, expand\_i fexpd m i1 = Ok is2 \(\Longrightarrow\)
 ~ \(\exists\)vm2', sem P2 vm2 is2 vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
 \normalfont%
-\caption{TODO}
+\caption{Lemmas relating the semantics before and after array expansion.}
 \end{figure}
 
-% Présenter tous les cas sémantiques simples sans necessiter de 1->many qui
-% fonctionnent d'array expansion puis tous les cas 1->many qui du coup ne
-% fonctionnent pas
-% Pget when expanded and not expanded
-% Laset when expanded and not expanded
-% Pvar Lnone Lvar Psub Lasub currently, then what they should do, how to handle
-% a list in recursive expansion
-% Cassgn
-% MkFun
-% Ccall
-% Présenter la problématique introduite par cette transformation qui la rendrait
-% improuvable puis les pistes de modifications.
+To express semantics preservation we need a relation on contexts and a relation
+between a value and its expansion.
+
+The relation between contexts should relate all expanded array cells to the
+target variables, so the relation holds if each variable not expanded is
+associated to the same value in both contexts and each cell of each expanded
+variable in the source context is associated to the same value as the variable
+it is expanded to in the target context.
+
+The relation between a value and its expansion should relates a value to the
+list of values where if the value is and array and it should be expanded then
+the list is the array cells in order, otherwise the list is the singleton of the
+value unchanged.
+
+\medskip
+
+Assume we have a program, its expansion and the expansion information for each
+function signature of that program.
+
+The semantics of a function call after array expansion should take the expanded
+list of values and return the values of the expanded variables. The semantics is
+preserved when if the semantics of a function call in the original program
+relates a list of argument to a list of return values then the semantics of the
+same function in the expanded program relates the list of expanded arguments and
+return values, expansion done according to the expansion information for that
+function signature.
+
+The semantics of a statement after array expansion should be the semantics of
+the list of statements where an assignment is transformed into a list of
+statements and a function call is transformed by changing the argument
+expressions and left members according to its signature. The semantics is
+preserved when the semantics of a statement and its expansion on related
+contexts are related contexts.
+
+\smallskip
+
+The semantics of an expression after array expansion is either the semantics of
+the one obtained expression when no expansion was performed or the expression
+was a single cell access or the list of the semantics of each expression in the
+expansion for array variables and array slices. The semantics is preserved when
+expanding the semantics of an expression in a context gives the semantics of
+the expanded expression in a related context. Likewise for the semantics of a
+left members, except we suppose expanded values are related and we should get
+related resulting contexts.
+
+\medskip
+
+To prove the semantics preservation, we need to consider that array are actually
+partial arrays, so we must be able to expand the whole array without raising an
+error, and the target expanded variables have to be associated a value. This is
+not limiting in the relation on contexts but it is in the function calls when a
+new context is built. To build this new context we evaluate every argument,
+including the one we expanded form a partially defined array. It is also
+limiting when assigning a arrays because we may not know which cell are defined.
+
+This problem can be solved in several different ways. We could force the array
+to be completely initialised, track the initialised cells (which would require
+some kind of reduction of expressiveness as otherwise it isn't computable),
+store optional words instead of words in the context or allow values to be
+undefined. We chose the last solution.
+
+\smallskip
+
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
+Variant value :=
+~ | Varr s n : array s n \(\rightarrow\) value
+~ | Vword s  : word  s   \(\rightarrow\) value
+~ | Vundef   :              value.
+\normalfont%
+\caption{New value type.}
+\end{figure}
+
+The new value type features the undefined word (arrays are always defined) and
+context have been modified to store values of the \texttt{value} type instead of
+the \texttt{sem\_t} dependant type.
 
 
-\section{}
-% Présentation des modifications de la sémantique au niveau des fonctions ainsi
-% que des varmap, avec les propriétés importantes et l'élimination des types
-% dépendants pour justifier les choix. Et de la transformation effectuée.
+\section{Pervasive changes to Jasmin semantics}\label{sec:perch}
+% TODO: Présentation des modifications des varmap, avec les propriétés
+% importantes et l'élimination des types dépendants pour justifier les choix.
+% Et de la transformation effectuée.
 
-\section{Conclusion}
+\section{Conclusion}\label{sec:ccl}
 % Présentation du travail restant dans le stage ainsi que potentiellement après
 % le stage: FIXER LES PREUVES
 
