@@ -206,7 +206,7 @@ Fixpoint expand\_e m e :=
 ~ match e with
 ~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Pvar x)
 ~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa == AAscale) in
+~     assert (aa = AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Pvar v)
 ~     else Error else Error
 ~   else Let e := expand\_e m e in Ok (Pget aa x e)
@@ -219,7 +219,7 @@ Definition expand\_lv m x :=
 ~ match x with
 ~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Lvar x)
 ~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa == AAscale) in
+~     assert (aa = AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Lvar v)
 ~     else Error else Error
 ~   else Let e := expand\_e m e in Ok (Laset aa x e)
@@ -240,12 +240,12 @@ Fixpoint expand\_e m e :=
 ~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
 ~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa == AAscale) in
+~     assert (aa = AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Pvar v))
 ~     else Error else Error
 ~   else Let inl e := expand\_e m e in Ok (inl (Pget aa x e))
 ~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa == AAscale) in
+~     assert (aa = AAscale) in
 ~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
 ~   else Let inl e := expand\_e m e in Ok (inl (Psub aa ws len x e))
@@ -257,7 +257,7 @@ Definition expand\_lv m x :=
 ~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
 ~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa == AAscale) in
+~     assert (aa = AAscale) in
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Lvar v))
 ~     else Error else Error
 ~   else Let inl e := expand\_e m e in Ok (inl (Laset aa x e))
@@ -273,7 +273,7 @@ Definition expand\_fvar m v :=
 
 Definition expand\_fsig m fd :=
 ~ let \{| f\_cc; f\_name; f\_args; f\_body; f\_ret |\} := fd in
-~ if f\_cc == Export then (fd, None) else
+~ if f\_cc = Export then (fd, None) else
 ~ let (args, expargs) := split [:: expand\_fvar m v | v \(\leftarrow\) f\_args ] in
 ~ let (ret,  expret)  := split [:: expand\_fvar m v | v \(\leftarrow\) f\_ret  ] in
 ~ (\{| f\_cc; f\_name; f\_args := flatten args; f\_body; f\_ret := flatten ret |\},
@@ -485,12 +485,12 @@ Fixpoint sem\_pexpr vm e :=
 ~ | Pget aa x e \(\Rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let w := get aa t i in
+~   Let w := array\_get aa t i in
 ~   Ok (Vword s w)
 ~ | Psub aa len x e \(\Rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let t' := get\_sub aa len t i in
+~   Let t' := array\_get\_sub aa len t i in
 ~   Ok (Varr s len t')
 ~ end.
 
@@ -637,7 +637,7 @@ described and their implications are discussed.
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 Definition eval\_array t i :=
-~ rmap Vword (WArray.get AAscale t i).
+~ rmap Vword (array\_get AAscale t i).
 
 Definition expand\_v expd v :=
 ~ match expd with
@@ -761,6 +761,13 @@ Variant value :=
 ~ | Varr s n : array s n \(\rightarrow\) value
 ~ | Vword s  : word  s   \(\rightarrow\) value
 ~ | Vundef   :              value.
+
+Definition type\_of\_val v :=
+~ match v with
+~ | Vundef     \(\Rightarrow\) Word 0
+~ | Vword s  \_ \(\Rightarrow\) Word s
+~ | Varr s n \_ \(\Rightarrow\) Arr s n
+~ end.
 \normalfont%
 \caption{New value type.}
 \end{figure}
@@ -771,9 +778,62 @@ the \texttt{sem\_t} dependant type.
 
 
 \section{Pervasive changes to Jasmin semantics}\label{sec:perch}
+
+In this section the ???
+
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
+Definition subtype t1 t2 :=
+~ match t1, t2 with
+~ | Word s1, Word s2 \(\Rightarrow\) s1 \(\leq\) s2
+~ | \_,       \_       \(\Rightarrow\) t1 = t2
+~ end.
+
+Definition compat\_type t1 t2 :=
+~ match t1, t2 with
+~ | Word \_, Word \_ \(\Rightarrow\) true
+~ | \_,      \_      \(\Rightarrow\) t1 = t2
+~ end.
+
+Definition word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) :=
+~ s1 \(\leq\) s2 \(\wedge\) w1 = zero\_extend s1 w2.
+
+Definition array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) :=
+~ n1 = n2 \(\wedge\) \(\forall\)i w,
+~   array\_get AAscale a1 i = Ok w \(\Longrightarrow\) array\_get AAscale a2 i = Ok w.
+
+Definition value\_uincl v1 v2 :=
+~ match v1, v2 with
+~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\Rightarrow\) array\_uincl s1 n1 s2 n2 t1 t2
+~ | Vword s1 w1,   Vword s2 w2   \(\Rightarrow\) word\_uincl s1 s2 w1 w2
+~ | Vundef,        \_             \(\Rightarrow\) compat\_type t (type\_of\_val v2)
+~ | \_,             \_             \(\Rightarrow\) false
+~ end.
+
+Definition truncate\_val ty v :=
+~ match v with
+~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n     then Ok v else Error
+~ | Vword s  w \(\Rightarrow\) if ty is sword s'   then Ok (rapp Vword v (truncate\_word s' w))
+~   else Error
+~ | Vundef     \(\Rightarrow\) if compat\_type t ty then Ok v else Error
+~ end.
+
+Lemma value\_uincl\_truncate ty x y x' :
+~ value\_uincl x y \(\Longrightarrow\) truncate\_val ty x = Ok x' \(\Longrightarrow\)
+~ \(\exists\)y', truncate\_val ty y = Ok y' \(\wedge\) value\_uincl x' y'.
+
+Lemma set\_var\_ok vm x v :
+~ compat\_type (vtype x) (type\_of\_val v) \(\Longrightarrow\) \(\exists\)vm', vm.[x \(\leftarrow\) v] = Ok vm'.
+\normalfont%
+\caption{TODO}
+\end{figure}
+
+Varmap old invariant, new invariant
+% expliquer pourquoi cette version de truncate_val est la seule faisant fonctionner les deux derniers lemmes
 % TODO: Présentation des modifications des varmap, avec les propriétés
 % importantes et l'élimination des types dépendants pour justifier les choix.
 % Et de la transformation effectuée.
+
 
 \section{Conclusion}\label{sec:ccl}
 % Présentation du travail restant dans le stage ainsi que potentiellement après
