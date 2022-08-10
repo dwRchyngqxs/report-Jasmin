@@ -919,6 +919,7 @@ Definition truncate\_val ty v :=
 ~ | Vundef \(\Rightarrow\) if ty is Arr \_ then Ok Vundef else Error
 ~ end.
 \normalfont%
+\caption{Truncation of values to use with the new contexts.}
 \end{figure}
 
 If we chose the truncation to be the identity in the undefined case and the
