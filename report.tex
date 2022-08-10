@@ -77,7 +77,8 @@ compilation step eliminates these arrays.
 In this article we did not implement most of the array expansion the Jasmin
 compiler already performs. Instead we implemented this transformation on
 function signature and function call for register arrays, and we studied how
-more array expansion could be performed in particluar for assignments.
+more array expansion could be performed in particluar for assignments informed
+by how the expansion of whole arrays in function call worked.
 
 % TODO: related word
 
@@ -416,9 +417,13 @@ unbeknown to the user. On top of that the global correction theorem would have
 to reflect modifications on these exported functions. Jasmin could either warn
 the user or fail to compile the program as we implemented it.
 
-Only array expansion for internal functions has been implemented before the
-redaction of this article even though our changes enables the other
-unimplemented expansion above.
+Only three array expansion are implemented at this time. The first was already
+done, it is expansion of single cell register array access. The other are part
+of our contribution. The second is register array expansion for internal
+functions (signature and call), the third is register array variable expansion
+in expressions and left members of function call statements. The latter word is
+a proof of concept of the other array expansion presented in this article and
+require changes enabling the other unimplemented expansions.
 
 In practise the expansion of all function signatures needs to be performed first
 to know which argument should be expanded when a function is called.
@@ -636,12 +641,12 @@ described and their implications are discussed.
 
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
-Definition eval\_array t i :=
-~ rmap Vword (array\_get AAscale t i).
+Definition eval\_array s t i :=
+~ rmap (Vword s) (array\_get AAscale t i).
 
 Definition expand\_v expd v :=
 ~ match expd with
-~ | true  \(\Rightarrow\) if v is Arr s n t then mapM (eval\_array t) (iota 0 n) else Error
+~ | true  \(\Rightarrow\) if v is Arr s n t then mapM (eval\_array s t) (iota 0 n) else Error
 ~ | false \(\Rightarrow\) Ok [:: v ]
 ~ end.
 
@@ -773,13 +778,56 @@ Definition type\_of\_val v :=
 \end{figure}
 
 The new value type features the undefined word (arrays are always defined) and
-context have been modified to store values of the \texttt{value} type instead of
-the \texttt{sem\_t} dependant type.
+context have been modified to store values of the new \texttt{value} type
+instead of the \texttt{sem\_t} dependant type.
 
 
 \section{Pervasive changes to Jasmin semantics}\label{sec:perch}
 
-In this section the ???
+In this section the changes to incorporate undefined value are motivated and
+described while uncovering some relevant simplifications used in the previous
+sections.
+
+There are two main motivations for replacing the dependant type in the contexts.
+The first is to include an undefined values, which could be done by an option
+type in the dependant type so the second motivation is to simplify the proofs.
+Proofs on dependent type tend to be tiresome because every rewriting need to
+ensure type are not violated, which in the case of dependant type means ensuring
+the parameter given to the dependant type are the same. This need is eliminated
+with a value type since all values are of the value type. Removing dependant
+types where unnecessary and favoring decidable alternatives is also a design
+choice made by SSReflect, a widespread Coq proof library used in Jasmin. The
+drawbacks of not using dependant types are that invariants need to be stated and
+proved manually, which is actually not that much of a drawback since the
+invariants become explicit and the proof needed are usually easy to prove.
+
+\medskip
+
+\begin{figure}
+\obeylines\obeyspaces\ttfamily%
+Record pword s :=
+~ \{ pw\_size: wsize;
+~   pw\_word : word pw\_size;
+~   pw\_proof : pw\_size \(\leq\) s \}.
+
+Definition psem\_t t :=
+~ match t with
+~ | Word s \(\Rightarrow\) pword s
+~ | \_      \(\Rightarrow\) sem\_t t
+~ end.
+\normalfont%
+\caption{\texttt{psem\_t} dependant type definition.}\label{fig:psemt}
+\end{figure}
+
+The old contexts used a dependant type to store the values, this dependant type
+was either \texttt{sem\_t} or \texttt{psem\_t}. The latter described in Figure
+\ref{fig:psemt} is used to store smaller words into seemingly bigger words for
+a compilation step where all registers and words become 64 bits as is available
+in a x86 cpu. The old invariant the context maintained using the dependant types
+was that the type of the variable corresponded to the type of the value stored
+since the type of the value stored was the dependant type aplied to the type of
+the variable, which in turn gave the invariant
+\texttt{vm.[x] = Ok v \(\Longrightarrow\) type\_of\_val v = v\_ty x} for free.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
@@ -794,7 +842,24 @@ Definition compat\_type t1 t2 :=
 ~ | Word \_, Word \_ \(\Rightarrow\) true
 ~ | \_,      \_      \(\Rightarrow\) t1 = t2
 ~ end.
+\normalfont%
+\caption{Type relations.}
+\end{figure}
 
+The new context store their value in the new \texttt{value} type. To account for
+the two cases where we have words of the right size or of a smaller size allowed
+the contexts take a type relation as parameter, this type relation is either
+equality or subtyping only on words. We need to manually ensure the previous
+context invariant is still maintained. However since we have undefined values we
+can make the access to a variable in the context never fail, instead like for
+the array previously it returns undefined for word variables and an empty array
+of the right type for array variable (this is considered the undefined value for
+an array) so the new invariant to maintain is
+\texttt{vm.[x] \(\neq\) Vundef \(\Longrightarrow\) rel (type\_of\_val vm.[x]) (v\_ty x)}
+where \texttt{rel} is the type relation parameter of the context.
+
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
 Definition word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) :=
 ~ s1 \(\leq\) s2 \(\wedge\) w1 = zero\_extend s1 w2.
 
@@ -812,10 +877,10 @@ Definition value\_uincl v1 v2 :=
 
 Definition truncate\_val ty v :=
 ~ match v with
-~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n     then Ok v else Error
-~ | Vword s  w \(\Rightarrow\) if ty is sword s'   then Ok (rapp Vword v (truncate\_word s' w))
-~   else Error
-~ | Vundef     \(\Rightarrow\) if compat\_type t ty then Ok v else Error
+~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n then Ok v else Error
+~ | Vword s w \(\Rightarrow\) if ty is sword s'
+~   then Ok (rapp (Vword s') v (truncate\_word s' w)) else Error
+~ | Vundef \(\Rightarrow\) if compat\_type t ty then Ok v else Error
 ~ end.
 
 Lemma value\_uincl\_truncate ty x y x' :
@@ -828,8 +893,12 @@ Lemma set\_var\_ok vm x v :
 \caption{TODO}
 \end{figure}
 
-Varmap old invariant, new invariant
+% TODO: introduce truncate_val, it is used in the semantics because
+% at some point everything becomes 64 bits but somehow operations on smaller words
+% must stay correct so words are truncated 
+
 % expliquer pourquoi cette version de truncate_val est la seule faisant fonctionner les deux derniers lemmes
+% Et pourquoi ces deux derniers lemmes
 % TODO: Présentation des modifications des varmap, avec les propriétés
 % importantes et l'élimination des types dépendants pour justifier les choix.
 % Et de la transformation effectuée.
