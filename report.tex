@@ -858,6 +858,8 @@ an array) so the new invariant to maintain is
 \texttt{vm.[x] \(\neq\) Vundef \(\Longrightarrow\) rel (type\_of\_val vm.[x]) (v\_ty x)}
 where \texttt{rel} is the type relation parameter of the context.
 
+\medskip
+
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
 Definition word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) :=
@@ -875,34 +877,60 @@ Definition value\_uincl v1 v2 :=
 ~ | \_,             \_             \(\Rightarrow\) false
 ~ end.
 
-Definition truncate\_val ty v :=
-~ match v with
-~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n then Ok v else Error
-~ | Vword s w \(\Rightarrow\) if ty is sword s'
-~   then Ok (rapp (Vword s') v (truncate\_word s' w)) else Error
-~ | Vundef \(\Rightarrow\) if compat\_type t ty then Ok v else Error
-~ end.
-
 Lemma value\_uincl\_truncate ty x y x' :
 ~ value\_uincl x y \(\Longrightarrow\) truncate\_val ty x = Ok x' \(\Longrightarrow\)
 ~ \(\exists\)y', truncate\_val ty y = Ok y' \(\wedge\) value\_uincl x' y'.
 
-Lemma set\_var\_ok vm x v :
-~ compat\_type (vtype x) (type\_of\_val v) \(\Longrightarrow\) \(\exists\)vm', vm.[x \(\leftarrow\) v] = Ok vm'.
+Lemma set\_get vm vm' x v : vm.[x \(\leftarrow\) v] = Ok vm' \(\Longrightarrow\)
+~ vm'.[x] = if rel (type\_of\_val v) (v\_ty x) then v else truncate\_val (v\_ty x) v.
 \normalfont%
-\caption{TODO}
+\caption{Core lemma used to prove semantics preservation.}
 \end{figure}
 
-% TODO: introduce truncate_val, it is used in the semantics because
-% at some point everything becomes 64 bits but somehow operations on smaller words
-% must stay correct so words are truncated 
+The semantics of statements and function call presented in the previous section
+was simplified. In particular because of the step where all stored words become
+64 bits, they are truncated to the size they are supposed to be before being
+assigned and after being retreived from the context. The truncation function
+has to be extended to undefined values. There are several ways to do this
+extension, but the truncattion function should still verify two core properties
+to most of the proofs of semantic preservation in all compilation steps:
+\begin{itemize}
+\item If assigning a value to a variable in a context succeds, then the value
+  associated to the variable is either the value assigned if the relation of the
+  context is satisfied between the type of the value and the type of the
+  variable or it is the truncation of the value assigned to the type of the
+  variable (if the type of the value is bigger than the type of the variable,
+  because it is the only other case where the assignment succeds).
+\item If a value is an extension (array more defined or bigger word of same
+  value) of another then truncating them to the same type preserve this
+  extension relation.
+\end{itemize}
+The first property is needed to be able to store smaller words into 64 bit words
+variables and it forces the truncation to be the identity when the truncation
+type is bigger than the value type.
 
-% expliquer pourquoi cette version de truncate_val est la seule faisant fonctionner les deux derniers lemmes
-% Et pourquoi ces deux derniers lemmes
-% TODO: Présentation des modifications des varmap, avec les propriétés
-% importantes et l'élimination des types dépendants pour justifier les choix.
-% Et de la transformation effectuée.
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
+Definition truncate\_val ty v :=
+~ match v with
+~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n then Ok v else Error
+~ | Vword s w \(\Rightarrow\) if ty is Word s'
+~   then Ok (rapp (Vword s') v (truncate\_word s' w)) else Error
+~ | Vundef \(\Rightarrow\) if ty is Arr \_ then Ok Vundef else Error
+~ end.
+\normalfont%
+\end{figure}
 
+If we chose the truncation to be the identity in the undefined case and the
+truncation of a word to a bigger size (where previously it failed) then both
+properties are verified.
+
+\medskip
+
+With these modifications we are confident the correctness proof should be
+provable. At the writing of this article the correctness proof for the register
+allocation step succeded and the proof for the register array expansion is in
+progress.
 
 \section{Conclusion}\label{sec:ccl}
 % Présentation du travail restant dans le stage ainsi que potentiellement après
