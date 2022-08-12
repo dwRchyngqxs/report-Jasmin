@@ -20,11 +20,12 @@
 \newcommand\setZ{\mathbb{Z}}
 \newcommand\setN{\mathbb{N}}
 
-\title{Array expansion in function arguments and return values}
+\title{Improving array expansion in Jasmin compiler}
 \author{Quentin \textsc{Corradi}}
 \setlength{\parindent}{0pt}
 
 % TODO: biblio (Jasmin articles, array contraction)
+% TODO: replace ???
 
 \begin{document}
 
@@ -32,29 +33,10 @@
 
 \section{Introduction}
 
-Arrays are an abstraction for handling memory using integers. It abstracts
-contiguous memory into a partial map from integers to memory cells. This
-abstraction could also be conceived as a partial map from integers to variables.
-This means any array \(t\) of size \(N\) could be replaced by \(N\) variables
-\(t_0, \dots, t_{N - 1}\) and a pair of functions
-\((\mathit{get}, \mathit{set})\) such that \(\mathit{get} : k \mapsto t_k\) and
-\(\mathit{set}\;k\;x\) sets \(t_k\) to \(x\).
-
-\smallskip
-
-The idea of array expansion is that the above interpretation of arrays can be
-used litterally as it doesn't need contiguity of variables in memory or any
-hardware support for integer indexing while still allowing all common operations
-on arrays: An array whose size is known can be replaced during compilation by as
-many variables as necessary, simplifying access to some kind of indicies to
-simple variable accesses.
-
-\smallskip
-
 Jasmin is a compiler and a language designed for writing high-assurance and
 high-speed cryptography primitives. The semantics is formally defined to allow
 rigorous reasoning about program behaviors.
-The Jasmin language is close to assembly, the main differences lies in:
+The Jasmin language is close to assembly, the main differences lie in:
 \begin{itemize}
 \item Jasmin abstracts numerical operations common in cryptography
 \item Jasmin provides variables and performs variable allocation in registers
@@ -63,22 +45,39 @@ The Jasmin language is close to assembly, the main differences lies in:
 \item Jasmin provides functions with support for C calling convention if needed
 \item Jasmin presents assembly instruction with a functional style to avoid
 hidden side effects
-\end{itemize}\smallskip
+\end{itemize}
 
 In Jasmin there are two kind of variables, the stack allocated ones and the
 register allocated ones. The user has to tell the compiler the kind of every
-variables. This also holds true for arrays. However on most processor on which
+variables. This also holds true for arrays. However on most processors on which
 people run cryptographic primitives and software, there is no hardware support
-for indexing registers with a value not encoded in the instruction. So some
-compilation step eliminates these arrays.
+for indexing registers with a value, all registers need to be known at
+compilation. In Jasmin a compilation step does it.
 
-\smallskip
+\medskip
 
-In this article we did not implement most of the array expansion the Jasmin
-compiler already performs. Instead we implemented this transformation on
-function signature and function call for register arrays, and we studied how
-more array expansion could be performed in particluar for assignments informed
-by how the expansion of whole arrays in function call worked.
+In most programming languages, arrays are an abstraction for handling memory
+using integers. It abstracts contiguous memory into a partial map from integers
+to memory cells in order to hide arithmetic on pointers. This abstraction could
+also be thought as a partial map from integers to variables, that is any array
+\(t\) of size \(N\) could be replaced by \(N\) variables
+\(t_0, \dots, t_{N - 1}\) and a pair of functions
+\((\mathit{get}, \mathit{set})\) such that \(\mathit{get} : k \mapsto t_k\) and
+\(\mathit{set}\;k\;x\) sets \(t_k\) to \(x\).
+
+This way of thinking about arrays allows us to eliminate Jasmin register arrays
+by replacing them by variables. This compilation step is called array expansion
+and is not a standard compilation step. In the following array expansion will
+also refer to the action of eliminating arrays by replacing them with the
+appropriate amount of variables.
+
+\medskip
+
+In this article we try to extend the array expansion step the Jasmin compiler
+already performs. In particular we implemeted array expansion in function
+signature and function calls, and we studied how more array expansion could be
+performed in particular for assignments informed by how the expansion of whole
+arrays in function call works.
 
 % TODO: related word
 
@@ -92,19 +91,23 @@ In Section \ref{sec:semantics} the relevant parts of Jasmin semantics are
 presented then the semantic side of array expansion is explored.
 In Section \ref{sec:perch} we describe and justify a change we made to the core
 of Jasmin semantics and the consequent changes we had to make in order to
-accomodate it and reprove the correctness theorems.
-Finally in Section \ref{sec:ccl} the unfinished parts of the work are described
-and % TODO: YOU KNOW, CONCLUDE!
+accomodate it and fix the correctness theorems.
 
 \begin{figure}[!b]
-\obeylines\obeyspaces\fbox{\parbox{\textwidth}{\ttfamily%
+\obeylines\obeyspaces\ttfamily%
+type wsize = \(\{ 2^i \mid i \in \setN \}\)
+
+type arr\_access =
+| AAdirect
+| AAscale
+
 type ty =
 | Word of wsize
 | Arr  of wsize \(\times\;\setN\)
 
 type v\_kind =
-| Stack of pointer
-| Reg   of reg\_kind \(\times\) pointer
+| Stack
+| Reg
 
 type var = \{
 ~ v\_id   : uid;
@@ -113,11 +116,11 @@ type var = \{
 \}
 
 type expr =
-| Pconst of wsize \(\times\;\setZ\)
+| Pconst    of wsize \(\times\;\setZ\)
 | Parr\_init of wsize \(\times\;\setN\)
-| Pvar   of var
-| Pget   of arr\_access \(\times\) var \(\times\) expr
-| Psub   of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
+| Pvar      of var
+| Pget      of arr\_access \(\times\) var \(\times\) expr
+| Psub      of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
 
 type lval =
 | Lnone
@@ -141,12 +144,14 @@ type func = \{
 ~ f\_ret  : var list;
 \}
 
-type prog = func list}}
-\caption{Simplified version of the relevant parts of Jasmin programs AST.}\label{fig:types}
+type prog = func list
+\normalfont%
+\caption{Stripped and simplified version of Jasmin programs' AST type.}\label{fig:types}
 \end{figure}
 
 
 \section{Array expansion compiler pass}\label{sec:syntax}
+% TODO: from here
 
 \subsection{Introduction to relevant parts of Jasmin syntax}
 
