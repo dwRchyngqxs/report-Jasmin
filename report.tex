@@ -25,7 +25,6 @@
 \setlength{\parindent}{0pt}
 
 % TODO: biblio (Jasmin articles, array contraction)
-% TODO: replace ???
 
 \begin{document}
 
@@ -97,10 +96,6 @@ accomodate it and fix the correctness theorems.
 \obeylines\obeyspaces\ttfamily%
 type wsize = \(\{ 2^i \mid i \in \setN \}\)
 
-type arr\_access =
-| AAdirect
-| AAscale
-
 type ty =
 | Word of wsize
 | Arr  of wsize \(\times\;\setN\)
@@ -119,14 +114,14 @@ type expr =
 | Pconst    of wsize \(\times\;\setZ\)
 | Parr\_init of wsize \(\times\;\setN\)
 | Pvar      of var
-| Pget      of arr\_access \(\times\) var \(\times\) expr
-| Psub      of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
+| Pget      of var \(\times\) expr
+| Psub      of \(\setN\;\times\) var \(\times\) expr
 
 type lval =
 | Lnone
 | Lvar  of var
-| Laset of arr\_access \(\times\) var \(\times\) expr
-| Lasub of arr\_access \(\times\;\setN\;\times\) var \(\times\) expr
+| Laset of var \(\times\) expr
+| Lasub of \(\setN\;\times\) var \(\times\) expr
 
 type instr =
 | Cassgn of lval \(\times\) expr
@@ -137,11 +132,11 @@ type call\_conv =
 | Subroutine
 
 type func = \{
-~ f\_cc   : call\_conv;
 ~ f\_name : uid;
 ~ f\_args : var list;
 ~ f\_body : instr list;
 ~ f\_ret  : var list;
+~ f\_cc   : call\_conv;
 \}
 
 type prog = func list
@@ -151,90 +146,90 @@ type prog = func list
 
 
 \section{Array expansion compiler pass}\label{sec:syntax}
-% TODO: from here
 
 \subsection{Introduction to relevant parts of Jasmin syntax}
 
-In this section, the relevant parts of Jasmin programs are described. The
-irrelevant parts, if mentioned, will not be expanded upon.
+In this section, the relevant parts of Jasmin programs' AST type is described.
+The irrelevant parts, if mentioned, will not be expanded upon. Most of the types
+are described in Figure \ref{fig:types} using a mix of a mathematical and
+OCaml-like syntax.
 
-A Jasmin progam is a list of functions among other things. A function is made
-among other things of its name, a unique identifier; its parameters, a list of
-variables; its body, a list of statements; its returned variables, a list of
-variables; and its kind. The kind of a function can be exported to the outside,
-in which case the function must follow some calling convention, or internal.
+A Jasmin progam is a list of functions. A function is made of its name, a unique
+identifier; its parameters, a list of variables; its body, a list of
+instructions; its returned variables, a list of variables; and its kind. The
+kind of a function can be ``exported to the outside'', in which case the
+function must follow some calling convention, or internal (subroutine).
 
 \smallskip
 
-A statement can be an assignment or a function call.
-Other statements include assembly instructions and control flow statements,
-however they are not relavant to us.
+An instruction can be an assignment or a function call. Other instructions
+include assembly instructions and control flow instructions, however they are
+not relevant to our work.
 
-An assignment is made of a left member and an expression. A function call is
-made of the called function identifier, a list of left members matching the
-function returned variables list on length, and a list of expression matching
+An assignment is made of an lvalue and an expression. A function call is
+made of the called function identifier, a list of lvalues matching the
+function returned variables list on length, and a list of expressions matching
 the function parameters list on length.
 
-Function arguments and return variables, left members and expressions refer to
+Function arguments and return variables, lvalues and expressions refer to
 variables. A variable is made of an identifier, a type and a kind. In the AST a
 variable doesn't have to be declared in order to be used. Across a function
 body, parameters and returned variables, all variables featuring the same
-identifier are considered to be the same. A variable kind is either stack or
-register. It indicates where the variable is stored.
+identifier and type are considered to be the same. A variable kind is a
+constraint on where the compiler can store the value, it is either on the stack
+or in a register.
 
 \smallskip
 
-A type can be a word of some size (a power of 2 bytes) or an array of some
-length over words of some size. Arrays are indexed by two means, the first is
-by considering the array as cells of some size, the other is by considering it
-as a sequence of bytes (independently of the size of the data being accessed at
-the index).
+An lvalue indicates where to store a value, it is either a variable
+(\texttt{Lvar} constructor), a cell of an array variable (\texttt{Laset}), a
+slice of an array variable (\texttt{Lasub}) or nowhere (\texttt{Lnone})
+indicating the value will not be used and can be discarded as soon as possible.
 
-Arrays can be built out of other arrays by taking a slice. A slice is a
-contiguous section of some length at an offset of the begining of an array.
+An expression can be a constant word (\texttt{Pconst}), an empty array with no
+initialised cell (\texttt{Parr\_init}), a variable (\texttt{Pvar}), a cell of an
+array variable (\texttt{Pget}) or a slice of an array variable (\texttt{Psub}).
+Operations like the addition of two expressions are also expressions.
+
+Single array cells are indexed by expressions. Slice are contiguous sections of
+arrays. The section is described using its length and offset from the begining
+of the array. The length is a non-negative number and the offset an expression.
 
 \smallskip
 
-A left members is either a variable, a cell of an array variable, a slice of an
-array variable or the discard.
+Arrays and words are two Jasmin types. A word is two to a non-negative power,
+representing the size of the word in bytes. An array is a partial map from
+non-negative numbers to words of some size.
 
-An array cell is indexed by an expression, its size is a word size. An array
-slice length and offset are expressions, the cell size is a word size. The
-discard left member does not store the value it is assigned.
-
-An expression can be a constant word, an empty array, a variable, a cell of an
-array variable or a slice of an array variable. Operations are also expressions
-made of other expressions.
+% TODO: from HERE
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Fixpoint expand\_e m e := 
+let expand\_e m e = 
 ~ match e with
-~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Pvar x)
-~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa = AAscale) in
+~ | Pvar x \(\rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Pvar x)
+~ | Pget x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Pvar v)
 ~     else Error else Error
-~   else Let e := expand\_e m e in Ok (Pget aa x e)
-~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
-~   else Let e := expand\_e m e in Ok (Psub aa len x e)
-~ | \_ \(\Rightarrow\) Ok e
+~   else let e = expand\_e m e in Ok (Pget x e)
+~ | Psub len x e \(\rightarrow\) if expand\_var m x is Some \_ then Error
+~   else let e = expand\_e m e in Ok (Psub len x e)
+~ | \_ \(\rightarrow\) Ok e
 ~ end.
 
 Definition expand\_lv m x :=
 ~ match x with
-~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Lvar x)
-~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa = AAscale) in
+~ | Lvar x \(\rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Lvar x)
+~ | Laset x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (Lvar v)
 ~     else Error else Error
-~   else Let e := expand\_e m e in Ok (Laset aa x e)
-~ | Lasub aa len x e \(\Rightarrow\) if expand\_var m x is Some \_ then Error
-~   else Let e := expand\_e m e in Ok (Lasub aa len x e)
-~ | \_ \(\Rightarrow\) Ok x
+~   else Let e := expand\_e m e in Ok (Laset x e)
+~ | Lasub len x e \(\rightarrow\) if expand\_var m x is Some \_ then Error
+~   else Let e := expand\_e m e in Ok (Lasub len x e)
+~ | \_ \(\rightarrow\) Ok x
 ~ end.
 \normalfont%
-\caption{Simplified version of expression and left member expansion in Jasmin.}
+\caption{Simplified version of expression and lvalue expansion in Jasmin.}
 \end{figure}
 
 \subsection{Array expansion in Jasmin compiler}
@@ -243,35 +238,32 @@ Definition expand\_lv m x :=
 \obeylines\obeyspaces\ttfamily%
 Fixpoint expand\_e m e := 
 ~ match e with
-~ | Pvar x \(\Rightarrow\) if expand\_var m x is Some vx
+~ | Pvar x \(\rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
-~ | Pget aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa = AAscale) in
+~ | Pget x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Pvar v))
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Pget aa x e))
-~ | Psub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa = AAscale) in
+~   else Let inl e := expand\_e m e in Ok (inl (Pget x e))
+~ | Psub len x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Psub aa ws len x e))
-~ | \_ \(\Rightarrow\) Ok (inl e)
+~   else Let inl e := expand\_e m e in Ok (inl (Psub ws len x e))
+~ | \_ \(\rightarrow\) Ok (inl e)
 ~ end.
 
 Definition expand\_lv m x :=
 ~ match x with
-~ | Lvar x \(\Rightarrow\) if expand\_var m x is Some vx
+~ | Lvar x \(\rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
-~ | Laset aa x e \(\Rightarrow\) if expand\_var m x is Some vx then
-~     assert (aa = AAscale) in
+~ | Laset x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Lvar v))
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Laset aa x e))
-~ | Lasub aa len x e \(\Rightarrow\) if expand\_var m x is Some vx then
+~   else Let inl e := expand\_e m e in Ok (inl (Laset x e))
+~ | Lasub len x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then Ok (inr [:: Lvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Lasub aa len x e))
-~ | \_ \(\Rightarrow\) Ok (inl x)
+~   else Let inl e := expand\_e m e in Ok (inl (Lasub len x e))
+~ | \_ \(\rightarrow\) Ok (inl x)
 ~ end.
 
 Definition expand\_fvar m v :=
@@ -285,28 +277,23 @@ Definition expand\_fsig m fd :=
 ~ (\{| f\_cc; f\_name; f\_args := flatten args; f\_body; f\_ret := flatten ret |\},
 ~   Some (expargs, expret)).
 \normalfont%
-\caption{Simplified version of expression, left member and functon signature ideal expansion.}
+\caption{Simplified version of expression, lvalue and functon signature ideal expansion.}
 \end{figure}
 
 A variable of type array and kind register means an array of register, but in
-most common processor on which ??? programs are run there is no hardware support
-for register indexing outside of the processor instruction opcode. Therefore we
-need to eliminate them in some compilation step; this is what the array
-expansion step does in the Jasmin compiler. Other kind of arrays are not
-expanded --even though we could expand them-- because there is hardware support
-for the operation performed on them and so we consider users know what they want.
+most common processor on which cryptographic primitives are run there is no
+hardware support for register indexing outside of the processor instruction
+opcode. Therefore we need to eliminate them in some compilation step; this is
+what the array expansion step does in the Jasmin compiler. Other kind of arrays
+are not expanded --even though we could expand them-- because there is hardware
+support for the operation performed on them and so we consider users know what
+they want.
 
 \medskip
 
-We want to replace all store and load operations on an array. There are two way
-to index on array as described in the previous section. The accesses where the
-index is an offset in bytes from the start of the array would require
-concatenating parts of registers together on loads or assigning portions of a
-value into portions of registers on stores. While this is completely possible we
-do not want to provide it so a program with this access scheme used on a
-register array will fail to compile.
-The accesses we have to deal with are of three kind: single cell indexing,
-array slicing and whole array access.
+We want to replace all store and load operations on an array. We have to deal
+with are of three kind of accesses: single cell indexing, array slicing and
+whole array access.
 
 \smallskip
 
@@ -314,46 +301,46 @@ array slicing and whole array access.
 \obeylines\obeyspaces\ttfamily%
 Definition expand\_e\_n m e n :=
 ~ match e with
-~ | Pvar (\{| v\_ty := Arr s \_ |\} as x) \(\Rightarrow\)
-~   Ok (mkseq n \(\lambda\)i, Pget AAscale v (Pconst U64 i))
-~ | Psub aa len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\Rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\)
-~     Ok (mkseq n \(\lambda\)i, Pget aa v (Padd e (Pconst U64 (i * s))))
-~   | \_ \(\Rightarrow\) Error
+~ | Pvar (\{| v\_ty := Arr s \_ |\} as x) \(\rightarrow\)
+~   Ok (mkseq n \(\lambda\)i, Pget v (Pconst U64 i))
+~ | Psub len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\rightarrow\) match e with
+~   | Pconst \_ \_ | Pvar \_ \(\rightarrow\)
+~     Ok (mkseq n \(\lambda\)i, Pget v (Padd e (Pconst U64 (i * s))))
+~   | \_ \(\rightarrow\) Error
 ~   end
-~ | \_ \(\Rightarrow\) Error
+~ | \_ \(\rightarrow\) Error
 ~ end else Error.
  
 Definition expand\_lv\_n m x n :=
 ~ match x with
-~ | Lnone \(\Rightarrow\) Ok (nseq n Lnone)
-~ | Lvar (\{| v\_ty := Arr s \_ |\} as v) \(\Rightarrow\)
-~   Ok (mkseq n \(\lambda\)i, Laset AAscale v (Pconst U64 i))
-~ | Lasub aa len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\Rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\Rightarrow\)
-~     Ok (mkseq n \(\lambda\)i, Laset aa v (Padd e (Pconst U64 (i * s))))
-~   | \_ \(\Rightarrow\) Error
+~ | Lnone \(\rightarrow\) Ok (nseq n Lnone)
+~ | Lvar (\{| v\_ty := Arr s \_ |\} as v) \(\rightarrow\)
+~   Ok (mkseq n \(\lambda\)i, Laset v (Pconst U64 i))
+~ | Lasub len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\rightarrow\) match e with
+~   | Pconst \_ \_ | Pvar \_ \(\rightarrow\)
+~     Ok (mkseq n \(\lambda\)i, Laset v (Padd e (Pconst U64 (i * s))))
+~   | \_ \(\rightarrow\) Error
 ~   end
-~ | \_ \(\Rightarrow\) Error
+~ | \_ \(\rightarrow\) Error
 ~ end else Error.
 
 Definition expand\_arg m ex e :=
 ~ match ex, expand\_e m e with
-~ | Some \_, Ok (inr es)  \(\Rightarrow\) Ok es
-~ | Some n, Ok (inl e)   \(\Rightarrow\) expand\_e\_n m e n
-~ | None  , Ok (inl e)   \(\Rightarrow\) Ok [:: e ]
-~ | \_                    \(\Rightarrow\) Error
+~ | Some \_, Ok (inr es)  \(\rightarrow\) Ok es
+~ | Some n, Ok (inl e)   \(\rightarrow\) expand\_e\_n m e n
+~ | None  , Ok (inl e)   \(\rightarrow\) Ok [:: e ]
+~ | \_                    \(\rightarrow\) Error
 ~ end.
 
 Definition expand\_ret m ex x :=
 ~ match ex, expand\_lv m x with
-~ | Some \_, Ok (inr xs)   \(\Rightarrow\) Ok xs
-~ | Some n, Ok (inl x)    \(\Rightarrow\) expand\_lv\_n m x n
-~ | None  , Ok (inl x)    \(\Rightarrow\) Ok [:: x ]
-~ | \_                     \(\Rightarrow\) Error
+~ | Some \_, Ok (inr xs)   \(\rightarrow\) Ok xs
+~ | Some n, Ok (inl x)    \(\rightarrow\) expand\_lv\_n m x n
+~ | None  , Ok (inl x)    \(\rightarrow\) Ok [:: x ]
+~ | \_                     \(\rightarrow\) Error
 ~ end.
 \normalfont%
-\caption{Expansion of argument expression and left member returns.}
+\caption{Expansion of argument expression and lvalue returns.}
 \end{figure}
 
 Assume we want to expand an array into variables. Single cell indexing can be
@@ -381,17 +368,17 @@ original array would be replaced by.
 \obeylines\obeyspaces\ttfamily%
 Fixpoint expand\_i fexpd m i :=
 ~ match i with
-~ | Cassgn x e \(\Rightarrow\)
+~ | Cassgn x e \(\rightarrow\)
 ~   match expand\_lv m x, expand\_e m e     with
-~   | Ok (inl x)       , Ok (inl e)       \(\Rightarrow\) Ok [:: Cassgn x e ]
-~   | Ok (inr xs)      , Ok (inr es)      \(\Rightarrow\) map2 Cassgn xs es
-~   | Ok (inl x)       , Ok (inr es)      \(\Rightarrow\)
+~   | Ok (inl x)       , Ok (inl e)       \(\rightarrow\) Ok [:: Cassgn x e ]
+~   | Ok (inr xs)      , Ok (inr es)      \(\rightarrow\) map2 Cassgn xs es
+~   | Ok (inl x)       , Ok (inr es)      \(\rightarrow\)
 ~     Let xs := expand\_lv\_n m x (size es) in map2 Cassgn xs es
-~   | Ok (inl xs)      , Ok (inr e)       \(\Rightarrow\)
+~   | Ok (inl xs)      , Ok (inr e)       \(\rightarrow\)
 ~     Let xs := expand\_e\_n  m x (size xs) in map2 Cassgn xs es
-~   | \_                                   \(\Rightarrow\) Error
+~   | \_                                   \(\rightarrow\) Error
 ~   end
-~ | Ccall xs fn es \(\Rightarrow\)
+~ | Ccall xs fn es \(\rightarrow\)
 ~   if get fexpd fn is Some (expargs, expret) then
 ~     Let xs := mapM2 (expand\_ret m) expargs xs in
 ~     Let es := mapM2 (expand\_arg m) expret  es in
@@ -399,13 +386,13 @@ Fixpoint expand\_i fexpd m i :=
 ~   else Error
 ~ end.
 \normalfont%
-\caption{Expansion of statements.}
+\caption{Expansion of instructions.}
 \end{figure}
 
-In practise we could perform these expansions in expressions and left members
-as explained using a function returning a list of expressions/left members and
+In practise we could perform these expansions in expressions and lvalues
+as explained using a function returning a list of expressions/lvalues and
 by checking the array is a single value in the recursive cases. The assignment
-would then match the left members with the right members. If this fails we have
+would then match the lvalues with the right members. If this fails we have
 a register array on one side and a non register array on the other side, so the
 unroll could be done by indexing each cell of the shorter list as long if it is
 a variable or a sub array, or duplicating the discard. The other cases would
@@ -426,7 +413,7 @@ Only three array expansion are implemented at this time. The first was already
 done, it is expansion of single cell register array access. The other are part
 of our contribution. The second is register array expansion for internal
 functions (signature and call), the third is register array variable expansion
-in expressions and left members of function call statements. The latter word is
+in expressions and lvalues of function call instructions. The latter word is
 a proof of concept of the other array expansion presented in this article and
 require changes enabling the other unimplemented expansions.
 
@@ -444,8 +431,8 @@ Variant value :=
 
 Definition sem\_t t :=
 ~ match t with
-~ | Arr s n \(\Rightarrow\) array s n
-~ | Word s  \(\Rightarrow\) word  s
+~ | Arr s n \(\rightarrow\) array s n
+~ | Word s  \(\rightarrow\) word  s
 ~ end.
 \normalfont%
 \caption{Simplified value types.}\label{fig:val}
@@ -457,8 +444,8 @@ Definition sem\_t t :=
 \obeylines\obeyspaces\ttfamily%
 Definition type\_of\_val v :=
 ~ match v with
-~ | Vword s  \_ \(\Rightarrow\) Word s
-~ | Varr s n \_ \(\Rightarrow\) Arr s n
+~ | Vword s  \_ \(\rightarrow\) Word s
+~ | Varr s n \_ \(\rightarrow\) Arr s n
 ~ end.
 
 Definition to\_arr  n v := if v is Varr s n t then Ok t else Error.
@@ -467,8 +454,8 @@ Definition to\_word s v := if v is Vword s  w then Ok w else Error.
 
 Definition to\_val t : sem\_t t \(\rightarrow\) value :=
 ~ match t return sem\_t t \(\rightarrow\) value with
-~ | Arr s n \(\Rightarrow\) Varr s n
-~ | Word s  \(\Rightarrow\) Vword s
+~ | Arr s n \(\rightarrow\) Varr s n
+~ | Word s  \(\rightarrow\) Vword s
 ~ end.
 \normalfont%
 \caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
@@ -489,41 +476,41 @@ are stored using the dependant type \texttt{sem\_t} as defined in Figure
 \obeylines\obeyspaces\ttfamily%
 Fixpoint sem\_pexpr vm e :=
 ~ match e with
-~ | Pconst s z \(\Rightarrow\) Ok (Vword s (wrepr s z))
-~ | Parr\_init s n \(\Rightarrow\) Ok (Varr s n (empty s n))
-~ | Pvar v \(\Rightarrow\) vm.[v]
-~ | Pget aa x e \(\Rightarrow\)
+~ | Pconst s z \(\rightarrow\) Ok (Vword s (wrepr s z))
+~ | Parr\_init s n \(\rightarrow\) Ok (Varr s n (empty s n))
+~ | Pvar v \(\rightarrow\) vm.[v]
+~ | Pget x e \(\rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let w := array\_get aa t i in
+~   Let w := array\_get t i in
 ~   Ok (Vword s w)
-~ | Psub aa len x e \(\Rightarrow\)
+~ | Psub len x e \(\rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let t' := array\_get\_sub aa len t i in
+~   Let t' := array\_get\_sub len t i in
 ~   Ok (Varr s len t')
 ~ end.
 
 Definition write\_lval l v vm :=
 ~ match l with
-~ | Lnone \(\Rightarrow\) Ok s
-~ | Lvar x \(\Rightarrow\) vm.[x \(\leftarrow\) v]
-~ | Laset aa x i \(\Rightarrow\)
+~ | Lnone \(\rightarrow\) Ok s
+~ | Lvar x \(\rightarrow\) vm.[x \(\leftarrow\) v]
+~ | Laset x i \(\rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm i >{}>= to\_int in
 ~   Let w := to\_word s v in
-~   Let t := set t aa i w in
+~   Let t := set t i w in
 ~   vm.[x \(\leftarrow\) to\_val (Arr s n) t]
-~ | Lasub aa len x i \(\Rightarrow\)
+~ | Lasub len x i \(\rightarrow\)
 ~   Let Varr s n t := vm.[x] in
 ~   Let i := sem\_pexpr vm i >{}>= to\_int in
 ~   Let t' := to\_arr s len v in 
-~   Let t := set\_sub n aa len t i t' in
+~   Let t := set\_sub n len t i t' in
 ~   vm.[x \(\leftarrow\) to\_val (Arr s len) t]
 ~ end.
 \normalfont%
 \caption{Top: function evaluating expression e in context vm; %
-Bottom: function modifying context s with value v according to left member l.}
+Bottom: function modifying context s with value v according to lvalue l.}
 \end{figure}
 
 Semantics of expressions is a partial function taking a context and an
@@ -543,7 +530,7 @@ bounds.
 
 \smallskip
 
-Semantics of left members is a partial function taking a left member, a value
+Semantics of lvalues is a partial function taking an lvalue, a value
 and a context, and returns a context.
 The semantic of the discard is the unchanged context. The semantic of a variable
 is the context where the variable is now associated to the given value if its
@@ -620,20 +607,20 @@ identifier, its arguments values and its returned values. The only rule is made
 of four conditions: the identifier is bound to of functions of the program, the
 function bound to this identifier takes as many parameters as the argument given
 and binding the arguments to the parameters on an empty context gives a valid
-context, the semantics of the accumulated statements relate this valid context
+context, the semantics of the accumulated instructions relate this valid context
 to another context, and in this latter context the value associated to the
 return values of the function correspond to the return values of the jugement.
 
 \smallskip
 
-The semantics of a statement relates a statement, an initial context and the
-context after executing this statement. The two rules relevant to us are the
+The semantics of an instruction relates an instruction, an initial context and the
+context after executing this instruction. The two rules relevant to us are the
 rules for assignment and function call, giving a semantics to the corresponding
-statements. The rule for assignments relates an initial context and the assignment
-statement with the semantics of the left member of the assignment where the
+instructions. The rule for assignments relates an initial context and the assignment
+instruction with the semantics of the lvalue of the assignment where the
 value is the semantics of the expression of the assignment. The rule for a
 function call relates the function call satement and an initial context to the
-accumulated semantics of all the left members starting from the initial context
+accumulated semantics of all the lvalues starting from the initial context
 on the returned values of the semantics of the function call of the function
 identifier and the arguments obtained by the semantics of the argument
 expressions in the initial context.
@@ -647,19 +634,19 @@ described and their implications are discussed.
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 Definition eval\_array s t i :=
-~ rmap (Vword s) (array\_get AAscale t i).
+~ rmap (Vword s) (array\_get t i).
 
 Definition expand\_v expd v :=
 ~ match expd with
-~ | true  \(\Rightarrow\) if v is Arr s n t then mapM (eval\_array s t) (iota 0 n) else Error
-~ | false \(\Rightarrow\) Ok [:: v ]
+~ | true  \(\rightarrow\) if v is Arr s n t then mapM (eval\_array s t) (iota 0 n) else Error
+~ | false \(\rightarrow\) Ok [:: v ]
 ~ end.
 
 Definition eq\_alloc m vm1 vm2 : Prop :=
 ~ \(\forall\)x, match get m x with
-~ | Some vx \(\Rightarrow\) \(\forall\)i vi, get vx i = Some vi \(\Longrightarrow\)
+~ | Some vx \(\rightarrow\) \(\forall\)i vi, get vx i = Some vi \(\Longrightarrow\)
 ~   (Let Varr s n t := vm1.[x] in eval\_array t i) = vm2.[vi]
-~ | None \(\Rightarrow\) vm1.[x] = vm2.[x]
+~ | None \(\rightarrow\) vm1.[x] = vm2.[x]
 ~ end.
 
 Lemma expand\_ePl m vm1 vm2 :
@@ -729,11 +716,11 @@ same function in the expanded program relates the list of expanded arguments and
 return values, expansion done according to the expansion information for that
 function signature.
 
-The semantics of a statement after array expansion should be the semantics of
-the list of statements where an assignment is transformed into a list of
-statements and a function call is transformed by changing the argument
-expressions and left members according to its signature. The semantics is
-preserved when the semantics of a statement and its expansion on related
+The semantics of an instruction after array expansion should be the semantics of
+the list of instructions where an assignment is transformed into a list of
+instructions and a function call is transformed by changing the argument
+expressions and lvalues according to its signature. The semantics is
+preserved when the semantics of an instruction and its expansion on related
 contexts are related contexts.
 
 \smallskip
@@ -744,7 +731,7 @@ was a single cell access or the list of the semantics of each expression in the
 expansion for array variables and array slices. The semantics is preserved when
 expanding the semantics of an expression in a context gives the semantics of
 the expanded expression in a related context. Likewise for the semantics of a
-left members, except we suppose expanded values are related and we should get
+lvalues, except we suppose expanded values are related and we should get
 related resulting contexts.
 
 \medskip
@@ -774,9 +761,9 @@ Variant value :=
 
 Definition type\_of\_val v :=
 ~ match v with
-~ | Vundef     \(\Rightarrow\) Word 0
-~ | Vword s  \_ \(\Rightarrow\) Word s
-~ | Varr s n \_ \(\Rightarrow\) Arr s n
+~ | Vundef     \(\rightarrow\) Word 0
+~ | Vword s  \_ \(\rightarrow\) Word s
+~ | Varr s n \_ \(\rightarrow\) Arr s n
 ~ end.
 \normalfont%
 \caption{New value type.}
@@ -817,8 +804,8 @@ Record pword s :=
 
 Definition psem\_t t :=
 ~ match t with
-~ | Word s \(\Rightarrow\) pword s
-~ | \_      \(\Rightarrow\) sem\_t t
+~ | Word s \(\rightarrow\) pword s
+~ | \_      \(\rightarrow\) sem\_t t
 ~ end.
 \normalfont%
 \caption{\texttt{psem\_t} dependant type definition.}\label{fig:psemt}
@@ -838,14 +825,14 @@ the variable, which in turn gave the invariant
 \obeylines\obeyspaces\ttfamily%
 Definition subtype t1 t2 :=
 ~ match t1, t2 with
-~ | Word s1, Word s2 \(\Rightarrow\) s1 \(\leq\) s2
-~ | \_,       \_       \(\Rightarrow\) t1 = t2
+~ | Word s1, Word s2 \(\rightarrow\) s1 \(\leq\) s2
+~ | \_,       \_       \(\rightarrow\) t1 = t2
 ~ end.
 
 Definition compat\_type t1 t2 :=
 ~ match t1, t2 with
-~ | Word \_, Word \_ \(\Rightarrow\) true
-~ | \_,      \_      \(\Rightarrow\) t1 = t2
+~ | Word \_, Word \_ \(\rightarrow\) true
+~ | \_,      \_      \(\rightarrow\) t1 = t2
 ~ end.
 \normalfont%
 \caption{Type relations.}
@@ -872,14 +859,14 @@ Definition word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) :=
 
 Definition array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) :=
 ~ n1 = n2 \(\wedge\) \(\forall\)i w,
-~   array\_get AAscale a1 i = Ok w \(\Longrightarrow\) array\_get AAscale a2 i = Ok w.
+~   array\_get a1 i = Ok w \(\Longrightarrow\) array\_get a2 i = Ok w.
 
 Definition value\_uincl v1 v2 :=
 ~ match v1, v2 with
-~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\Rightarrow\) array\_uincl s1 n1 s2 n2 t1 t2
-~ | Vword s1 w1,   Vword s2 w2   \(\Rightarrow\) word\_uincl s1 s2 w1 w2
-~ | Vundef,        \_             \(\Rightarrow\) compat\_type t (type\_of\_val v2)
-~ | \_,             \_             \(\Rightarrow\) false
+~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\rightarrow\) array\_uincl s1 n1 s2 n2 t1 t2
+~ | Vword s1 w1,   Vword s2 w2   \(\rightarrow\) word\_uincl s1 s2 w1 w2
+~ | Vundef,        \_             \(\rightarrow\) compat\_type t (type\_of\_val v2)
+~ | \_,             \_             \(\rightarrow\) false
 ~ end.
 
 Lemma value\_uincl\_truncate ty x y x' :
@@ -892,7 +879,7 @@ Lemma set\_get vm vm' x v : vm.[x \(\leftarrow\) v] = Ok vm' \(\Longrightarrow\)
 \caption{Core lemma used to prove semantics preservation.}
 \end{figure}
 
-The semantics of statements and function call presented in the previous section
+The semantics of instructions and function call presented in the previous section
 was simplified. In particular because of the step where all stored words become
 64 bits, they are truncated to the size they are supposed to be before being
 assigned and after being retreived from the context. The truncation function
@@ -918,10 +905,10 @@ type is bigger than the value type.
 \obeylines\obeyspaces\ttfamily%
 Definition truncate\_val ty v :=
 ~ match v with
-~ | Varr s n \_ \(\Rightarrow\) if ty = Arr s n then Ok v else Error
-~ | Vword s w \(\Rightarrow\) if ty is Word s'
+~ | Varr s n \_ \(\rightarrow\) if ty = Arr s n then Ok v else Error
+~ | Vword s w \(\rightarrow\) if ty is Word s'
 ~   then Ok (rapp (Vword s') v (truncate\_word s' w)) else Error
-~ | Vundef \(\Rightarrow\) if ty is Arr \_ then Ok Vundef else Error
+~ | Vundef \(\rightarrow\) if ty is Arr \_ then Ok Vundef else Error
 ~ end.
 \normalfont%
 \caption{Truncation of values to use with the new contexts.}
