@@ -1,6 +1,5 @@
 \documentclass{article}
 
-\usepackage[utf8]{inputenc}
 %\usepackage{xunicode}
 \usepackage[T1]{fontenc}
 %\usepackage{fontspec}
@@ -11,7 +10,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 %\usepackage{unicode-math}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{enumitem}
 \setlist{nosep,leftmargin=*}
 \frenchspacing
@@ -201,311 +200,305 @@ Arrays and words are two Jasmin types. A word is two to a non-negative power,
 representing the size of the word in bytes. An array is a partial map from
 non-negative numbers to words of some size.
 
-% TODO: from HERE
-
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-let expand\_e m e = 
-~ match e with
-~ | Pvar x \(\rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Pvar x)
-~ | Pget x e \(\rightarrow\) if expand\_var m x is Some vx then
-~     if e is Pconst \_ z then if get vx z is Some v then Ok (Pvar v)
-~     else Error else Error
-~   else let e = expand\_e m e in Ok (Pget x e)
-~ | Psub len x e \(\rightarrow\) if expand\_var m x is Some \_ then Error
-~   else let e = expand\_e m e in Ok (Psub len x e)
-~ | \_ \(\rightarrow\) Ok e
-~ end.
-
-Definition expand\_lv m x :=
-~ match x with
-~ | Lvar x \(\rightarrow\) if expand\_var m x is Some \_ then Error else Ok (Lvar x)
-~ | Laset x e \(\rightarrow\) if expand\_var m x is Some vx then
-~     if e is Pconst \_ z then if get vx z is Some v then Ok (Lvar v)
-~     else Error else Error
-~   else Let e := expand\_e m e in Ok (Laset x e)
-~ | Lasub len x e \(\rightarrow\) if expand\_var m x is Some \_ then Error
-~   else Let e := expand\_e m e in Ok (Lasub len x e)
-~ | \_ \(\rightarrow\) Ok x
-~ end.
-\normalfont%
-\caption{Simplified version of expression and lvalue expansion in Jasmin.}
-\end{figure}
-
-\subsection{Array expansion in Jasmin compiler}
-
-\begin{figure}[p]
-\obeylines\obeyspaces\ttfamily%
-Fixpoint expand\_e m e := 
-~ match e with
+let rec expand\_e m = function
 ~ | Pvar x \(\rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
 ~ | Pget x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Pvar v))
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Pget x e))
+~   else Let inl e = expand\_e m e in Ok (inl (Pget x e))
 ~ | Psub len x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Psub ws len x e))
-~ | \_ \(\rightarrow\) Ok (inl e)
-~ end.
+~   else Let inl e = expand\_e m e in Ok (inl (Psub ws len x e))
+~ | e \(\rightarrow\) Ok (inl e)
 
-Definition expand\_lv m x :=
-~ match x with
+let expand\_lv m = function
 ~ | Lvar x \(\rightarrow\) if expand\_var m x is Some vx
 ~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
 ~ | Laset x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Lvar v))
 ~     else Error else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Laset x e))
+~   else Let inl e = expand\_e m e in Ok (inl (Laset x e))
 ~ | Lasub len x e \(\rightarrow\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then Ok (inr [:: Lvar v | v \(\leftarrow\) take len (drop z vx) ])
 ~     else Error
-~   else Let inl e := expand\_e m e in Ok (inl (Lasub len x e))
-~ | \_ \(\rightarrow\) Ok (inl x)
-~ end.
-
-Definition expand\_fvar m v :=
-~ if expand\_var m v is Some vx then (Some (size vx), vx) else (None, [:: v ]).
-
-Definition expand\_fsig m fd :=
-~ let \{| f\_cc; f\_name; f\_args; f\_body; f\_ret |\} := fd in
-~ if f\_cc = Export then (fd, None) else
-~ let (args, expargs) := split [:: expand\_fvar m v | v \(\leftarrow\) f\_args ] in
-~ let (ret,  expret)  := split [:: expand\_fvar m v | v \(\leftarrow\) f\_ret  ] in
-~ (\{| f\_cc; f\_name; f\_args := flatten args; f\_body; f\_ret := flatten ret |\},
-~   Some (expargs, expret)).
+~   else Let inl e = expand\_e m e in Ok (inl (Lasub len x e))
+~ | x \(\rightarrow\) Ok (inl x)
 \normalfont%
-\caption{Simplified version of expression, lvalue and functon signature ideal expansion.}
+\caption{Expansion of expressions and lvalues.}\label{fig:fullexp}
 \end{figure}
 
-A variable of type array and kind register means an array of register, but in
-most common processor on which cryptographic primitives are run there is no
-hardware support for register indexing outside of the processor instruction
-opcode. Therefore we need to eliminate them in some compilation step; this is
-what the array expansion step does in the Jasmin compiler. Other kind of arrays
-are not expanded --even though we could expand them-- because there is hardware
-support for the operation performed on them and so we consider users know what
-they want.
+\subsection{Array expansion in Jasmin compiler}
+
+A variable of type array and kind register means an array of registers, but in
+most common processors on which cryptographic primitives are run there is no
+hardware support for indexing registers with a register. Therefore we need to
+eliminate them in some compilation step; this is what the array expansion step
+does in the Jasmin compiler. Other kind of arrays are not expanded --even though
+we could try to expand them-- because there is hardware support for indexing
+memory with a register and so we consider users know what they want.
+
+In order to expand an array we have to replace all store and load operations
+performed on this array and modify function signature it appears in. The load
+and store operations (resp. in expressions and lvalues) come in three kinds:
+single cell indexing, array slicing and whole array access.
+
+\smallskip
+
+Assume we have a map associating each array to the list of variables it is
+expanded to (called \texttt{m} in the following figures; as all array length are
+known in Jasmin it is just a matter of generating enough fresh names).
 
 \medskip
-
-We want to replace all store and load operations on an array. We have to deal
-with are of three kind of accesses: single cell indexing, array slicing and
-whole array access.
-
-\smallskip
-
-\begin{figure}[p]
-\obeylines\obeyspaces\ttfamily%
-Definition expand\_e\_n m e n :=
-~ match e with
-~ | Pvar (\{| v\_ty := Arr s \_ |\} as x) \(\rightarrow\)
-~   Ok (mkseq n \(\lambda\)i, Pget v (Pconst U64 i))
-~ | Psub len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\rightarrow\)
-~     Ok (mkseq n \(\lambda\)i, Pget v (Padd e (Pconst U64 (i * s))))
-~   | \_ \(\rightarrow\) Error
-~   end
-~ | \_ \(\rightarrow\) Error
-~ end else Error.
- 
-Definition expand\_lv\_n m x n :=
-~ match x with
-~ | Lnone \(\rightarrow\) Ok (nseq n Lnone)
-~ | Lvar (\{| v\_ty := Arr s \_ |\} as v) \(\rightarrow\)
-~   Ok (mkseq n \(\lambda\)i, Laset v (Pconst U64 i))
-~ | Lasub len (\{ v\_id; v\_kind; v\_ty := Arr s \_ |\} as x) e \(\rightarrow\) match e with
-~   | Pconst \_ \_ | Pvar \_ \(\rightarrow\)
-~     Ok (mkseq n \(\lambda\)i, Laset v (Padd e (Pconst U64 (i * s))))
-~   | \_ \(\rightarrow\) Error
-~   end
-~ | \_ \(\rightarrow\) Error
-~ end else Error.
-
-Definition expand\_arg m ex e :=
-~ match ex, expand\_e m e with
-~ | Some \_, Ok (inr es)  \(\rightarrow\) Ok es
-~ | Some n, Ok (inl e)   \(\rightarrow\) expand\_e\_n m e n
-~ | None  , Ok (inl e)   \(\rightarrow\) Ok [:: e ]
-~ | \_                    \(\rightarrow\) Error
-~ end.
-
-Definition expand\_ret m ex x :=
-~ match ex, expand\_lv m x with
-~ | Some \_, Ok (inr xs)   \(\rightarrow\) Ok xs
-~ | Some n, Ok (inl x)    \(\rightarrow\) expand\_lv\_n m x n
-~ | None  , Ok (inl x)    \(\rightarrow\) Ok [:: x ]
-~ | \_                     \(\rightarrow\) Error
-~ end.
-\normalfont%
-\caption{Expansion of argument expression and lvalue returns.}
-\end{figure}
-
-Assume we want to expand an array into variables. Single cell indexing can be
-resolved to a single variable when the index is a constant. Otherwise we do not
-support it. The exception is when the index is a for loop variable, in which
-case at this compilation step it is a constant because loop unrolling has
-already been performed.
-Currently only this part is implemented in Jasmin.
-
-Whole array access can be resolved either by introducing a real array on which
-the operation is performed, or when the operation can be unrolled by unrolling
-it and using the method for single cell indexing. We won't introduce
-intermediate arrays because we do not want to incur hidden costs. If the user
-wants to introduce an intermediate array they can and the resulting operation
-can be unrolled.
-
-Finally array slicing would only be supported when the parameters of the slice
-are constant. In this case the slice is a new array and the variable it is
-replaced by is a slice with the same parameters of the variables by which the
-original array would be replaced by.
-
-\smallskip
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Fixpoint expand\_i fexpd m i :=
-~ match i with
-~ | Cassgn x e \(\rightarrow\)
-~   match expand\_lv m x, expand\_e m e     with
-~   | Ok (inl x)       , Ok (inl e)       \(\rightarrow\) Ok [:: Cassgn x e ]
-~   | Ok (inr xs)      , Ok (inr es)      \(\rightarrow\) map2 Cassgn xs es
-~   | Ok (inl x)       , Ok (inr es)      \(\rightarrow\)
-~     Let xs := expand\_lv\_n m x (size es) in map2 Cassgn xs es
-~   | Ok (inl xs)      , Ok (inr e)       \(\rightarrow\)
-~     Let xs := expand\_e\_n  m x (size xs) in map2 Cassgn xs es
-~   | \_                                   \(\rightarrow\) Error
-~   end
-~ | Ccall xs fn es \(\rightarrow\)
-~   if get fexpd fn is Some (expargs, expret) then
-~     Let xs := mapM2 (expand\_ret m) expargs xs in
-~     Let es := mapM2 (expand\_arg m) expret  es in
-~     Ok [:: Ccall (flatten xs) fn (flatten es) ]
-~   else Error
-~ end.
+let expand\_e\_n m n = function
+~ | Pvar x       \(\rightarrow\) if v\_ty x is Arr \_ \_
+~   then Ok [:: Pget v (Pconst U64 i) | 0 \(\leq\) i \(<\) n ] else Error
+~ | Psub len x e \(\rightarrow\) Ok [:: Pget v (Padd e (Pconst U64 i)) | 0 \(\leq\) i \(<\) n ]
+~ | \_ \(\rightarrow\) Error
+ 
+let expand\_lv\_n m n = function
+~ | Lnone         \(\rightarrow\) Ok [:: Lnone | 0 \(\leq\) i \(<\) n ]
+~ | Lvar x        \(\rightarrow\) if v\_ty x is Arr \_ \_
+~   then Ok [:: Laset x (Pconst U64 i) | 0 \(\leq\) i \(<\) n ] else Error
+~ | Lasub len x e \(\rightarrow\) Ok [:: Laset x (Padd e (Pconst U64 i)) | 0 \(\leq\) i \(<\) n ]
+~ | \_             \(\rightarrow\) Error
 \normalfont%
-\caption{Expansion of instructions.}
+\caption{Expansion for unrolling expressions and lvalues.}\label{fig:unrexp}
 \end{figure}
 
-In practise we could perform these expansions in expressions and lvalues
-as explained using a function returning a list of expressions/lvalues and
-by checking the array is a single value in the recursive cases. The assignment
-would then match the lvalues with the right members. If this fails we have
-a register array on one side and a non register array on the other side, so the
-unroll could be done by indexing each cell of the shorter list as long if it is
-a variable or a sub array, or duplicating the discard. The other cases would
-duplicate an operation so they instead would fail to compile to not introduce
-hidden costs.
+The array expansion for expressions and lvalues are depicted in Figure
+\ref{fig:fullexp} using a pseudo OCaml-like syntax for convenience.
+In this figure and all the following, \texttt{Let} \textit{pat} \texttt{=}
+\textit{e1} \texttt{in} \texttt{e2} is a shorthand for matching the result of
+\textit{e1} against \texttt{Ok} \textit{pat} and \texttt{Error}; in the former
+case the relevant variables of \textit{pat} are bound and \textit{e2} is
+evaluated, in the latter case the expression evaluates to \texttt{Error}.
+
+The figure doesn't describe actual implemented code because expansion of
+variables and subarrays for assignments is performed in a previous compilation
+step\footnote{Prior to our work, single cell access for lvalues and expression
+in assignments was implmented in the array expansion step and variable expansion
+was implemented in a previous compilation step}, but they could all be
+implemented in one compiler step as the code required to expand expressions and
+lvalues for function calls and assignment only differs slightly as will be shown
+further in this section.
+
+\smallskip
+
+Single cell indexing (\texttt{Pget} and \texttt{Laget}) can be expanded to a
+single variable (\texttt{Pvar} and \texttt{Lvar}) when the index is a constant.
+Otherwise it is not supported. When the index is a for loop variable in the
+original program, the loop unrolling and constant propagation steps which come
+before the array expansion step have already transformed the indexes into
+constants, so it also falls under the constant case.
+
+Array slices (\texttt{Psub} and \texttt{Lasub}) are expanded by acceding to
+the relevant slice of variables replacing the array provided the offset
+parameter is a constant. The operation performed on this slice will then require
+an unrolling.
+
+Finally whole array accesses (\texttt{Pvar} and \texttt{Lvar}) are equivalent to
+slices of arrays with no offset and same length as the base array on which they
+are performed. They are replaced by all the variables the array is to be
+replaced with.
+
+\smallskip
+
+In order to perform the unrolling we need to know whether an expansion was
+performed in expressions and lvalues because an array may have been expanded in
+one but not in the other, and only looking at the length of the expanded
+expressions and lvalues isn't sufficient as arrays can be of length one.
+
+For instance when expanding an assignment between a single cell register array
+and a single cell stack array, the register array will be expanded to a list of
+one expression or lvalue (depending on which side of the assignment it is),
+which by the length alone doesn't tell whether it was expanded or not, and we
+should know that because in one case nothing is done and in the other the
+assignment is unrolled, that is the array on the other side is replaced with an
+access to its only cell.
+
+The expansion for unrolling expressions and lvalues (no array expansion
+performed) is illustrated in Figure \ref{fig:unrexp} with the functions
+\texttt{expand\_e\_n} and \texttt{expand\_lv\_n} to expand expressions and
+lvalues when the other side expansion is of length \texttt{n}.
+
+The expansions performed for unrolling array variables and slices consist in
+accessing the relevant cells. The only other case where an unrolling makes sense
+is the \texttt{Lnone} lvalue, which is the only one requiring a length to know
+how many times it should be duplicated.
 
 \medskip
 
-There is another kind of expansion when a function takes some register arrays as
-parameters. In this case we instead take as many register variables as necessary
-instead of the array. That transformation is only wanted when the function is
-not exported to the other programs because we do not want to make such changes
-unbeknown to the user. On top of that the global correction theorem would have
-to reflect modifications on these exported functions. Jasmin could either warn
-the user or fail to compile the program as we implemented it.
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
+let expand\_fvar m v =
+~ if expand\_var m v is Some vx then (Some (size vx), vx) else (None, [:: v ])
 
-Only three array expansion are implemented at this time. The first was already
-done, it is expansion of single cell register array access. The other are part
-of our contribution. The second is register array expansion for internal
-functions (signature and call), the third is register array variable expansion
-in expressions and lvalues of function call instructions. The latter word is
-a proof of concept of the other array expansion presented in this article and
-require changes enabling the other unimplemented expansions.
+let expand\_fsig m fd =
+~ let \{| f\_cc; f\_name; f\_args; f\_body; f\_ret |\} = fd in
+~ if f\_cc = Export then (fd, None) else
+~ let (args, expargs) = split [:: expand\_fvar m v | v \(\leftarrow\) f\_args ] in
+~ let (ret,  expret)  = split [:: expand\_fvar m v | v \(\leftarrow\) f\_ret  ] in
+~ (\{| f\_cc; f\_name; f\_args := flatten args; f\_body; f\_ret := flatten ret |\},
+~   Some (expargs, expret))
 
-In practise the expansion of all function signatures needs to be performed first
-to know which argument should be expanded when a function is called.
+let expand\_arg m ex e =
+~ match ex, expand\_e m e with
+~ | Some \_, Ok (inr es)  \(\rightarrow\) Ok es
+~ | Some n, Ok (inl e)   \(\rightarrow\) expand\_e\_n m n e
+~ | None  , Ok (inl e)   \(\rightarrow\) Ok [:: e ]
+~ | \_                    \(\rightarrow\) Error
 
+let expand\_ret m ex x =
+~ match ex, expand\_lv m x with
+~ | Some \_, Ok (inr xs)   \(\rightarrow\) Ok xs
+~ | Some n, Ok (inl x)    \(\rightarrow\) expand\_lv\_n m n x
+~ | None  , Ok (inl x)    \(\rightarrow\) Ok [:: x ]
+~ | \_                     \(\rightarrow\) Error
+\normalfont%
+\caption{Expansion of signatures, argument expressions and returned values lvalues.}\label{fig:sigexp}
+\end{figure}
+
+Array expansion for function signatures and argument expressions and
+returned values lvalues in function calls are depicted in Figure
+\ref{fig:sigexp}.
+
+The expansion of an array in function signature is simply a matter of replacing
+it with the variables it is expanded to. A slight subtelty however is that like
+expansion for expressions and lvalues we need to know which variables were
+expanded in order to expand (sometimes without actual array expansion as
+illustrated in \texttt{expand\_arg} and \texttt{expand\_ret}) arguments and
+return assignments accordingly.
+
+\smallskip
+
+The expansion in function signature is only wanted when the function is not
+exported to other programs because we do not want to make such changes unbeknown
+to the user. Two solution satisfy this constraint\footnote{If register array
+were allowed in exported functions by the typechecker}: warning the user or
+failing to compile. As the global correction theorem only mentions exported
+functions it would have to be complexified in order to reflect signature
+expansion if we chose the former solution so we chose the latter.
+
+\medskip
+
+\begin{figure}[t]
+\obeylines\obeyspaces\ttfamily%
+let rec expand\_i fexpd m = function
+~ | Cassgn x e \(\rightarrow\)
+~   match expand\_lv m x, expand\_e m e    with
+~   | Ok (inl x)       , Ok (inl e)      \(\rightarrow\) Ok [:: Cassgn x e ]
+~   | Ok (inr xs)      , Ok (inr es)     \(\rightarrow\) [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~   | Ok (inl x)       , Ok (inr es)     \(\rightarrow\)
+~     Let xs = expand\_lv\_n m x (size es) in [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~   | Ok (inl xs)      , Ok (inr e)      \(\rightarrow\)
+~     Let es = expand\_e\_n  m x (size xs) in [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~   | \_                                  \(\rightarrow\) Error
+~ | Ccall xs fn es \(\rightarrow\)
+~   if get fexpd fn is Some (expargs, expret) then
+~     Let xs = [:: expand\_ret m xp x | xp \(\leftarrow\) expargs, x \(\leftarrow\) xs ] in
+~     Let es = [:: expand\_arg m xp e | xp \(\leftarrow\) expret , e \(\leftarrow\) es ] in
+~     Ok [:: Ccall (flatten xs) fn (flatten es) ]
+~   else
+~     Let xs = [:: Let inl x' = expand\_lv x in x' | x \(\leftarrow\) xs ] in
+~     Let es = [:: Let inl e' = expand\_e e  in e' | e \(\leftarrow\) es ] in
+~     Ok [:: Ccall xs fn es ]
+\normalfont%
+\caption{Expansion of instructions.}\label{fig:insexp}
+\end{figure}
+
+Expansion of instructions is illustrated in Figure \ref{fig:insexp}. As
+described previously assignment are expanded by expanding each side of the
+assignment and unrolling if necessary and function calls are expanded using
+informating gathered while expanding the signature, which means signature
+expansion needs to be performed first on every function before expanding the
+body of any function.
 
 \section{Semantics aspect of array expansion}\label{sec:semantics}
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Variant value :=
-~ | Varr s n : array s n \(\rightarrow\) value
-~ | Vword s  : word  s   \(\rightarrow\) value.
+type value =
+| Varr s n of array s n
+| Vword s  of word  s
 
-Definition sem\_t t :=
-~ match t with
-~ | Arr s n \(\rightarrow\) array s n
-~ | Word s  \(\rightarrow\) word  s
-~ end.
+type sem\_t = function
+| Arr s n \(\rightarrow\) array s n
+| Word s  \(\rightarrow\) word  s
 \normalfont%
-\caption{Simplified value types.}\label{fig:val}
+\caption{Simplified value types.}\label{fig:oldval}
 \end{figure}
 
 \subsection{Relevant parts of Jasmin semantics}
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Definition type\_of\_val v :=
-~ match v with
+let type\_of\_val = function
 ~ | Vword s  \_ \(\rightarrow\) Word s
 ~ | Varr s n \_ \(\rightarrow\) Arr s n
-~ end.
 
-Definition to\_arr  n v := if v is Varr s n t then Ok t else Error.
+let to\_arr  n v = if v is Varr s n t then Ok t else Error.
 
-Definition to\_word s v := if v is Vword s  w then Ok w else Error.
+let to\_word s v = if v is Vword s  w then Ok w else Error.
 
-Definition to\_val t : sem\_t t \(\rightarrow\) value :=
-~ match t return sem\_t t \(\rightarrow\) value with
+let to\_val : sem\_t t \(\rightarrow\) value = function
 ~ | Arr s n \(\rightarrow\) Varr s n
 ~ | Word s  \(\rightarrow\) Vword s
-~ end.
 \normalfont%
-\caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}
+\caption{Utilitary functions on \texttt{value} and \texttt{sem\_t}.}\label{fig:oldvfun}
 \end{figure}
 
 In this section, the relevant parts of Jasmin semantics are described. None of
-it is part of our contribution but it is a necessary part in order to understand
-the main properties we have to prove for the compiler.
+it is part of our contribution but it is necessary in order to understand
+the main properties we have to prove for the compiler correctness theorem.
+
+% TODO: from HERE
 
 Jasmin values can be words and partially defined arrays of words. Variables value
 are stored using the dependant type \texttt{sem\_t} as defined in Figure
-\ref{fig:val} in order to keep the invariant
+\ref{fig:oldval} in order to keep the invariant
 \texttt{m.[x] = Ok v\(\implies\)type\_of\_val v = v\_ty x}.
 
 \medskip
 
 \begin{figure}[!t]
 \obeylines\obeyspaces\ttfamily%
-Fixpoint sem\_pexpr vm e :=
-~ match e with
+let rec sem\_pexpr vm = function
 ~ | Pconst s z \(\rightarrow\) Ok (Vword s (wrepr s z))
 ~ | Parr\_init s n \(\rightarrow\) Ok (Varr s n (empty s n))
 ~ | Pvar v \(\rightarrow\) vm.[v]
 ~ | Pget x e \(\rightarrow\)
-~   Let Varr s n t := vm.[x] in
-~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let w := array\_get t i in
+~   Let Varr s n t = vm.[x] in
+~   Let i = sem\_pexpr vm e >{}>= to\_int in
+~   Let w = array\_get t i in
 ~   Ok (Vword s w)
 ~ | Psub len x e \(\rightarrow\)
-~   Let Varr s n t := vm.[x] in
-~   Let i := sem\_pexpr vm e >{}>= to\_int in
-~   Let t' := array\_get\_sub len t i in
+~   Let Varr s n t = vm.[x] in
+~   Let i = sem\_pexpr vm e >{}>= to\_int in
+~   Let t' = array\_get\_sub len t i in
 ~   Ok (Varr s len t')
-~ end.
 
-Definition write\_lval l v vm :=
+let write\_lval l v vm =
 ~ match l with
 ~ | Lnone \(\rightarrow\) Ok s
 ~ | Lvar x \(\rightarrow\) vm.[x \(\leftarrow\) v]
 ~ | Laset x i \(\rightarrow\)
-~   Let Varr s n t := vm.[x] in
-~   Let i := sem\_pexpr vm i >{}>= to\_int in
-~   Let w := to\_word s v in
-~   Let t := set t i w in
+~   Let Varr s n t = vm.[x] in
+~   Let i = sem\_pexpr vm i >{}>= to\_int in
+~   Let w = to\_word s v in
+~   Let t = set t i w in
 ~   vm.[x \(\leftarrow\) to\_val (Arr s n) t]
 ~ | Lasub len x i \(\rightarrow\)
-~   Let Varr s n t := vm.[x] in
-~   Let i := sem\_pexpr vm i >{}>= to\_int in
-~   Let t' := to\_arr s len v in 
-~   Let t := set\_sub n len t i t' in
+~   Let Varr s n t = vm.[x] in
+~   Let i = sem\_pexpr vm i >{}>= to\_int in
+~   Let t' = to\_arr s len v in 
+~   Let t = set\_sub n len t i t' in
 ~   vm.[x \(\leftarrow\) to\_val (Arr s len) t]
 ~ end.
 \normalfont%
@@ -633,19 +626,19 @@ described and their implications are discussed.
 
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
-Definition eval\_array s t i :=
-~ rmap (Vword s) (array\_get t i).
+let eval\_array s t i = Let w = array\_get t i in Vword s w.
 
-Definition expand\_v expd v :=
+let expand\_v expd v =
 ~ match expd with
-~ | true  \(\rightarrow\) if v is Arr s n t then mapM (eval\_array s t) (iota 0 n) else Error
+~ | true  \(\rightarrow\) if v is Arr s n t then [:: eval\_array s t i | i \(\leftarrow\) iota 0 n ]
+~   else Error
 ~ | false \(\rightarrow\) Ok [:: v ]
 ~ end.
 
-Definition eq\_alloc m vm1 vm2 : Prop :=
+let eq\_alloc m vm1 vm2 : Prop =
 ~ \(\forall\)x, match get m x with
 ~ | Some vx \(\rightarrow\) \(\forall\)i vi, get vx i = Some vi \(\Longrightarrow\)
-~   (Let Varr s n t := vm1.[x] in eval\_array t i) = vm2.[vi]
+~   (Let Varr s n t = vm1.[x] in eval\_array t i) = vm2.[vi]
 ~ | None \(\rightarrow\) vm1.[x] = vm2.[x]
 ~ end.
 
@@ -673,14 +666,14 @@ Lemma expand\_lvPr m vm1 vm2 :
 ~ \(\exists\)vs, expand\_v true v = Ok vs \(\wedge\)
 ~   \(\exists\)vm2', fold2 write\_lval xs2 vs vm2 = Ok vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
 
-Lemma expand\_funcP P1 P2 fexpd fn vargs vret :=
+Lemma expand\_funcP P1 P2 fexpd fn vargs vret =
 ~ sem\_call P1 fn vargs vret \(\Longrightarrow\)
 ~ \(\forall\)expdin expdout, get fexpd fn = Some (expargs, expret) \(\Longrightarrow\)
 ~ \(\forall\)vargs', mapM (expand\_v \(\circ\) is\_some) expargs vargs = Ok vargs' \(\Longrightarrow\)
 ~ \(\exists\)vret',  mapM (expand\_v \(\circ\) is\_some) expret  vret  = Ok vret'  \(\wedge\)
 ~   sem\_call P2 fn (flatten vargs') (flatten vres').
 
-Lemma expand\_iP P1 P2 fexpd m vm1 vm2 :=
+Lemma expand\_iP P1 P2 fexpd m vm1 vm2 =
 ~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
 ~ \(\forall\)i1 vm1', sem\_i P1 vm1 i1 vm1' \(\Longrightarrow\)
 ~ \(\forall\)is2, expand\_i fexpd m i1 = Ok is2 \(\Longrightarrow\)
@@ -754,17 +747,15 @@ undefined. We chose the last solution.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Variant value :=
-~ | Varr s n : array s n \(\rightarrow\) value
-~ | Vword s  : word  s   \(\rightarrow\) value
-~ | Vundef   :              value.
+type value =
+| Varr s n of array s n
+| Vword s  of word  s
+| Vundef
 
-Definition type\_of\_val v :=
-~ match v with
+let type\_of\_val = function
 ~ | Vundef     \(\rightarrow\) Word 0
 ~ | Vword s  \_ \(\rightarrow\) Word s
 ~ | Varr s n \_ \(\rightarrow\) Arr s n
-~ end.
 \normalfont%
 \caption{New value type.}
 \end{figure}
@@ -797,16 +788,15 @@ invariants become explicit and the proof needed are usually easy to prove.
 
 \begin{figure}
 \obeylines\obeyspaces\ttfamily%
-Record pword s :=
-~ \{ pw\_size: wsize;
-~   pw\_word : word pw\_size;
-~   pw\_proof : pw\_size \(\leq\) s \}.
+type pword s = \{
+~ pw\_size  : wsize;
+~ pw\_word  : word pw\_size;
+~ pw\_proof : pw\_size \(\leq\) s;
+\}
 
-Definition psem\_t t :=
-~ match t with
-~ | Word s \(\rightarrow\) pword s
-~ | \_      \(\rightarrow\) sem\_t t
-~ end.
+type psem\_t = function
+| Word s \(\rightarrow\) pword s
+| t      \(\rightarrow\) sem\_t t
 \normalfont%
 \caption{\texttt{psem\_t} dependant type definition.}\label{fig:psemt}
 \end{figure}
@@ -823,13 +813,13 @@ the variable, which in turn gave the invariant
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Definition subtype t1 t2 :=
+let subtype t1 t2 =
 ~ match t1, t2 with
 ~ | Word s1, Word s2 \(\rightarrow\) s1 \(\leq\) s2
 ~ | \_,       \_       \(\rightarrow\) t1 = t2
 ~ end.
 
-Definition compat\_type t1 t2 :=
+let compat\_type t1 t2 =
 ~ match t1, t2 with
 ~ | Word \_, Word \_ \(\rightarrow\) true
 ~ | \_,      \_      \(\rightarrow\) t1 = t2
@@ -854,14 +844,14 @@ where \texttt{rel} is the type relation parameter of the context.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Definition word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) :=
+let word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) =
 ~ s1 \(\leq\) s2 \(\wedge\) w1 = zero\_extend s1 w2.
 
-Definition array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) :=
+let array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) =
 ~ n1 = n2 \(\wedge\) \(\forall\)i w,
 ~   array\_get a1 i = Ok w \(\Longrightarrow\) array\_get a2 i = Ok w.
 
-Definition value\_uincl v1 v2 :=
+let value\_uincl v1 v2 =
 ~ match v1, v2 with
 ~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\rightarrow\) array\_uincl s1 n1 s2 n2 t1 t2
 ~ | Vword s1 w1,   Vword s2 w2   \(\rightarrow\) word\_uincl s1 s2 w1 w2
@@ -903,13 +893,12 @@ type is bigger than the value type.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-Definition truncate\_val ty v :=
+let truncate\_val ty v =
 ~ match v with
 ~ | Varr s n \_ \(\rightarrow\) if ty = Arr s n then Ok v else Error
 ~ | Vword s w \(\rightarrow\) if ty is Word s'
-~   then Ok (rapp (Vword s') v (truncate\_word s' w)) else Error
+~   then Ok (if truncate\_word s' w is Ok w' then Vword s' w' else v) else Error
 ~ | Vundef \(\rightarrow\) if ty is Arr \_ then Ok Vundef else Error
-~ end.
 \normalfont%
 \caption{Truncation of values to use with the new contexts.}
 \end{figure}
