@@ -23,15 +23,14 @@
 \author{Quentin \textsc{Corradi}}
 \setlength{\parindent}{0pt}
 
-% TODO: biblio (Jasmin articles, array contraction)
-
 \begin{document}
 
 \maketitle
 
 \section{Introduction}
 
-Jasmin is a compiler and a language designed for writing high-assurance and
+Jasmin\cite{10.1145/3133956.3134078, 10.1145/3319535.3363211, 9152665} is a
+compiler and a language designed for writing high-assurance and
 high-speed cryptography primitives. The semantics is formally defined to allow
 rigorous reasoning about program behaviors.
 The Jasmin language is close to assembly, the main differences lie in:
@@ -924,5 +923,11 @@ progress.
 \section{Conclusion}\label{sec:ccl}
 % Présentation du travail restant dans le stage ainsi que potentiellement après
 % le stage: FIXER LES PREUVES
+% ouverture: array expansion is not limited to our compiler, you could implement
+% your own version too and get handy array interface on variables
+
+\section{Bibliography}
+\bibliographystyle{plain}
+\bibliography{biblio}
 
 \end{document}
