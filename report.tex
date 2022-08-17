@@ -74,8 +74,8 @@ appropriate amount of variables.
 In this article we try to extend the array expansion step the Jasmin compiler
 already performs. In particular we implemeted array expansion in function
 signature and function calls, and we studied how more array expansion could be
-performed in particular for assignments informed by how the expansion of whole
-arrays in function call works.
+performed in particular for slice assignments informed by how the expansion of
+whole arrays in function call works.
 
 % TODO: related word
 
@@ -205,26 +205,26 @@ non-negative numbers to words of some size.
 \obeylines\obeyspaces\ttfamily%
 let rec expand\_e m = function
 ~ | Pvar x \(\mapsto\) if expand\_var m x is Some vx
-~   then Ok (inr [:: Pvar v | v \(\leftarrow\) vx ]) else Ok (inl (Pvar x))
+~   then Ok (inr [:: Pvar v | v \(\gets\) vx ]) else Ok (inl (Pvar x))
 ~ | Pget x e \(\mapsto\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Pvar v))
 ~     else Error else Error
 ~   else Let inl e = expand\_e m e in Ok (inl (Pget x e))
 ~ | Psub len x e \(\mapsto\) if expand\_var m x is Some vx then
-~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\leftarrow\) take len (drop z vx) ])
+~     if e is Pconst \_ z then Ok (inr [:: Pvar v | v \(\gets\) take len (drop z vx) ])
 ~     else Error
 ~   else Let inl e = expand\_e m e in Ok (inl (Psub ws len x e))
 ~ | e \(\mapsto\) Ok (inl e)
 
 let expand\_lv m = function
 ~ | Lvar x \(\mapsto\) if expand\_var m x is Some vx
-~   then Ok (inr [:: Lvar v | v \(\leftarrow\) vx ]) else Ok (inl (Lvar x))
+~   then Ok (inr [:: Lvar v | v \(\gets\) vx ]) else Ok (inl (Lvar x))
 ~ | Laset x e \(\mapsto\) if expand\_var m x is Some vx then
 ~     if e is Pconst \_ z then if get vx z is Some v then Ok (inl (Lvar v))
 ~     else Error else Error
 ~   else Let inl e = expand\_e m e in Ok (inl (Laset x e))
 ~ | Lasub len x e \(\mapsto\) if expand\_var m x is Some vx then
-~     if e is Pconst \_ z then Ok (inr [:: Lvar v | v \(\leftarrow\) take len (drop z vx) ])
+~     if e is Pconst \_ z then Ok (inr [:: Lvar v | v \(\gets\) take len (drop z vx) ])
 ~     else Error
 ~   else Let inl e = expand\_e m e in Ok (inl (Lasub len x e))
 ~ | x \(\mapsto\) Ok (inl x)
@@ -261,7 +261,7 @@ let expand\_e\_n m n = function
 ~ | Pvar x       \(\mapsto\) if v\_ty x is Arr \_ \_
 ~   then Ok [:: Pget v (Pconst U64 i) | 0 \(\leq\) i \(<\) n ] else Error
 ~ | Psub len x e \(\mapsto\) Ok [:: Pget v (Padd e (Pconst U64 i)) | 0 \(\leq\) i \(<\) n ]
-~ | \_ \(\mapsto\) Error
+~ | \_            \(\mapsto\) Error
  
 let expand\_lv\_n m n = function
 ~ | Lnone         \(\mapsto\) Ok [:: Lnone | 0 \(\leq\) i \(<\) n ]
@@ -331,8 +331,8 @@ lvalues when the other side expansion is of length \texttt{n}.
 
 The expansions performed for unrolling array variables and slices consist in
 accessing the relevant cells. The only other case where an unrolling makes sense
-is the \texttt{Lnone} lvalue, which is the only one requiring a length to know
-how many times it should be duplicated.
+is the nowhere (\texttt{Lnone}) lvalue, which is the only one requiring a length
+to know how many times it should be duplicated.
 
 \medskip
 
@@ -344,8 +344,8 @@ let expand\_fvar m v =
 let expand\_fsig m fd =
 ~ let \{| f\_cc; f\_name; f\_args; f\_body; f\_ret |\} = fd in
 ~ if f\_cc = Export then (fd, None) else
-~ let (args, expargs) = split [:: expand\_fvar m v | v \(\leftarrow\) f\_args ] in
-~ let (ret,  expret)  = split [:: expand\_fvar m v | v \(\leftarrow\) f\_ret  ] in
+~ let (args, expargs) = split [:: expand\_fvar m v | v \(\gets\) f\_args ] in
+~ let (ret,  expret)  = split [:: expand\_fvar m v | v \(\gets\) f\_ret  ] in
 ~ (\{| f\_cc; f\_name; f\_args := flatten args; f\_body; f\_ret := flatten ret |\},
 ~   Some (expargs, expret))
 
@@ -383,20 +383,20 @@ let rec expand\_i fexpd m = function
 ~ | Cassgn x e \(\mapsto\)
 ~   match expand\_lv m x, expand\_e m e    with
 ~   | Ok (inl x)       , Ok (inl e)      \(\mapsto\) Ok [:: Cassgn x e ]
-~   | Ok (inr xs)      , Ok (inr es)     \(\mapsto\) [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~   | Ok (inr xs)      , Ok (inr es)     \(\mapsto\) [:: Cassgn x e | x \(\gets\) xs, e \(\gets\) es ]
 ~   | Ok (inl x)       , Ok (inr es)     \(\mapsto\)
-~     Let xs = expand\_lv\_n m x (size es) in [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~     Let xs = expand\_lv\_n m x (size es) in [:: Cassgn x e | x \(\gets\) xs, e \(\gets\) es ]
 ~   | Ok (inl xs)      , Ok (inr e)      \(\mapsto\)
-~     Let es = expand\_e\_n  m x (size xs) in [:: Cassgn x e | x \(\leftarrow\) xs, e \(\leftarrow\) es ]
+~     Let es = expand\_e\_n  m x (size xs) in [:: Cassgn x e | x \(\gets\) xs, e \(\gets\) es ]
 ~   | \_                                  \(\mapsto\) Error
 ~ | Ccall xs fn es \(\mapsto\)
 ~   if get fexpd fn is Some (expargs, expret) then
-~     Let xs = [:: expand\_ret m xp x | xp \(\leftarrow\) expargs, x \(\leftarrow\) xs ] in
-~     Let es = [:: expand\_arg m xp e | xp \(\leftarrow\) expret , e \(\leftarrow\) es ] in
+~     Let xs = [:: expand\_ret m xp x | xp \(\gets\) expargs, x \(\gets\) xs ] in
+~     Let es = [:: expand\_arg m xp e | xp \(\gets\) expret , e \(\gets\) es ] in
 ~     Ok [:: Ccall (flatten xs) fn (flatten es) ]
 ~   else
-~     Let xs = [:: Let inl x' = expand\_lv x in x' | x \(\leftarrow\) xs ] in
-~     Let es = [:: Let inl e' = expand\_e e  in e' | e \(\leftarrow\) es ] in
+~     Let xs = [:: Let inl x' = expand\_lv x in x' | x \(\gets\) xs ] in
+~     Let es = [:: Let inl e' = expand\_e e  in e' | e \(\gets\) es ] in
 ~     Ok [:: Ccall xs fn es ]
 \normalfont%
 \caption{Expansion of instructions.}\label{fig:insexp}
@@ -423,8 +423,7 @@ body of any function.
 
 \section{Semantics aspect of array expansion}\label{sec:semantics}
 
-
-\subsection{Relevant parts of Jasmin semantics}
+\subsection{Relevant parts of Jasmin semantics}\label{ssec:jassem}
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
@@ -462,7 +461,7 @@ defined in Figure \ref{fig:oldval} in order to keep the invariant
 
 \medskip
 
-\begin{figure}[t]
+\begin{figure}[p] % TODO LATER: compare buty against sem rules
 \obeylines\obeyspaces\ttfamily%
 \begin{minipage}{0.52\textwidth}
 let rec sem\_pexpr vm = function
@@ -486,21 +485,21 @@ let rec sem\_pexpr vm = function
 let write\_lval l v vm =
 ~ match l with
 ~ | Lnone \(\mapsto\) Ok s
-~ | Lvar x \(\mapsto\) vm.[x \(\leftarrow\) v]
-~ | Laset x i \(\mapsto\)
+~ | Lvar x \(\mapsto\) vm.[x \(\gets\) v]
+~ | Laset x e \(\mapsto\)
 ~   Let Varr s n t = vm.[x] in
-~   Let vi = sem\_pexpr vm i in
+~   Let vi = sem\_pexpr vm e in
 ~   Let i = to\_int vi in
 ~   Let w = to\_word s v in
 ~   Let t = set t i w in
-~   vm.[x \(\leftarrow\) to\_val (Arr s n) t]
-~ | Lasub len x i \(\mapsto\)
+~   vm.[x \(\gets\) to\_val (Arr s n) t]
+~ | Lasub len x e \(\mapsto\)
 ~   Let Varr s n t = vm.[x] in
-~   Let vi = sem\_pexpr vm i in
+~   Let vi = sem\_pexpr vm e in
 ~   Let i = to\_int vi in
 ~   Let t' = to\_arr s len v in 
 ~   Let t = set\_sub n len t i t' in
-~   vm.[x \(\leftarrow\) to\_val (Arr s len) t]
+~   vm.[x \(\gets\) to\_val (Arr s len) t]
 \end{minipage}\normalfont%
 \caption{Left: function evaluating expression e in context vm;}\vspace{-0.8\baselineskip}\center
 Right: function modifying context s with value v according to lvalue l.\label{fig:semelv}
@@ -522,34 +521,31 @@ associated to the variable \texttt{x} in the context, slice of length
 \texttt{len} and starting at the offset given by the semantics of the offset
 expression \texttt{e}.
 
-% TODO: from HERE
-
-Semantics of lvalues is a partial function taking an lvalue, a value
-and a context, and returns a context.
-The semantics of the discard is the unchanged context. The semantics of a variable
-is the context where the variable is now associated to the given value if its
-type is the same as the variable. The semantics of indexing an array variable is
-the context where the array associated to the variable has
-its cell given by the array access scheme and the semantics of the index
-expression is is now associated to
-the given value if its type is the correct word type. The semantics of slicing an
-array variable is the context where each cell of the array variable intersecting
-with the slice obtained using the array access scheme
-and length given and the semantics of the starting offset expression is now
-associated to the right
-word of the given value if it is an array of the right length.
+Semantics of lvalues is a partial function (\texttt{write\_lval}) taking an
+lvalue, a value and a context, and returning a context.
+The semantics of the nowhere (\texttt{Lnone}) is the unchanged context. The
+semantics of a variable (\texttt{Lvar x}) is the context where the variable
+(\texttt{x}) is associated to the given value. The semantics of indexing an
+array variable (\texttt{Laset x e}) is the context where the array associated
+to the variable (\texttt{x}) has its cell given by the semantics of the index
+expression (\texttt{e}) associated to the given value. The semantics of slicing
+an array variable (\texttt{Lasub len x e}) is the context where the array
+variable (\texttt{x}) is associated to an array which \texttt{len} cells
+starting from the index given by the semantics of the offset expression
+(\texttt{e}) are associated to the \texttt{len} cells from the array value
+given.
 
 \medskip
 
-\begin{figure}[t]
+\begin{figure}[p]
 \ttfamily
 sem\_call P :
 \begin{center}
 \begin{tabular}{c}
 get\_func P fn = Some f \\
-fold2 (\(\lambda\)x v, vm.[x \(\leftarrow\) v]) (f\_args f) vargs empty = Ok vm1 \\
+fold2 (\(\lambda\)x v, vm.[x \(\gets\) v]) (f\_args f) vargs empty = Ok vm1 \\
 sem P vm1 (f\_body f) vm2 \\
-mapM (\(\lambda\)x, vm2.[x]) (f\_ret f) = Ok vres
+{}[:: vm2.[x] | x \(\gets\) f\_ret f ] = Ok vres
 \\\hline
 sem\_call P fn vargs vres
 \end{tabular}
@@ -560,13 +556,13 @@ sem P :
 \begin{tabular}{c}
 \\\hline
 sem P vm [::] vm
-\end{tabular} Eskip\quad
+\end{tabular} \textrm{\textsc{Eskip}}\quad
 \begin{tabular}{c}
 sem\_i P vm1 i vm2\quad
 sem P vm2 l vm3
 \\\hline
 sem P vm1 (i::l) vm3
-\end{tabular} Eseq
+\end{tabular} \textrm{\textsc{Eseq}}
 \end{center}
 
 sem\_i P :
@@ -576,67 +572,77 @@ sem\_pexpr vm1 e = Ok v\quad
 write\_lval x v vm1 = Ok vm2
 \\\hline
 sem\_i P vm1 (Cassgn x e) vm2
-\end{tabular} Eassgn
+\end{tabular} \textrm{\textsc{Eassgn}}
 
 ~
 
 \begin{tabular}{c}
-mapM (sem\_pexpr vm1) args = Ok vargs \\
+[:: sem\_pexpr vm1 e | e \(\gets\) es ] = Ok vargs \\
 sem\_call P f vargs vres \\
 fold2 write\_lval xs vres vm1 = Ok vm2
 \\\hline
-sem\_i P vm1 (Ccall xs f args) vm2
-\end{tabular} \raisebox{-\baselineskip}{Ecall}
+sem\_i P vm1 (Ccall xs f es) vm2
+\end{tabular} \raisebox{-\baselineskip}{\textrm{\textsc{Ecall}}}
 \end{center}
 \normalfont%
-\caption{Simplified inductive big step semantics rules.}
+\caption{Simplified inductive big step semantics rules.}\label{fig:semall}
 \end{figure}
 
-The semantics of Jasmin functions and instructions in a program are big step
-inductive predicates. The former relates functions, their arguments and returned
-values, the latter relates two contexts and an instruction.
-
-The semantics of a function call in a program is a predicate relating a function
-identifier, its arguments values and its returned values. The only rule is made
-of four conditions: the identifier is bound to of functions of the program, the
-function bound to this identifier takes as many parameters as the argument given
-and binding the arguments to the parameters on an empty context gives a valid
-context, the semantics of the accumulated instructions relate this valid context
-to another context, and in this latter context the value associated to the
-return values of the function correspond to the return values of the jugement.
+The semantics of Jasmin functions and instructions in a program \texttt{P} are
+defined as the big step inductive predicates \texttt{sem\_call} and
+\texttt{sem\_i} as depicted in Figure \ref{fig:semall}. The former relates a
+function and its arguments to the returned values, the latter relates a context
+and an instruction to the context after executing the instruction. The semantics
+for instructions is naturally extanded to a sequence of instructions in
+predicate \texttt{sem} by chaining the contexts (\textsc{Eseq}) with the empty
+sequence being the identity on contexts (\textsc{Eskip}).
 
 \smallskip
 
-The semantics of an instruction relates an instruction, an initial context and the
-context after executing this instruction. The two rules relevant to us are the
-rules for assignment and function call, giving a semantics to the corresponding
-instructions. The rule for assignments relates an initial context and the assignment
-instruction with the semantics of the lvalue of the assignment where the
-value is the semantics of the expression of the assignment. The rule for a
-function call relates the function call satement and an initial context to the
-accumulated semantics of all the lvalues starting from the initial context
-on the returned values of the semantics of the function call of the function
-identifier and the arguments obtained by the semantics of the argument
-expressions in the initial context.
+The semantics of a function call is made of only one rule with four premisses:
+the function identifier is bound to a function (\texttt{f}) of the program,
+binding this function arguments to the parameters in an empty context gives a
+valid context (\texttt{vm1}), the semantics of sequences of instructions
+(\texttt{sem}) relates this valid context and the function body to another
+context (\texttt{vm2}) and in this latter context the values associated to the
+return variables of the function correspond to the return values of the jugement.
+
+\smallskip
+
+The semantics of an instruction is made of two rules. The rule for assignment
+(\textsc{Eassgn}) gives the semantics of assignment instructions
+(\texttt{Cassgn x e}), it has two premisses: the semantics of the assignment
+expression (\texttt{e}) in the initial context (\texttt{vm1}) is a value
+(\texttt{v}) and the semantics of the assignment lvalue (\texttt{x}) on the
+initial context (\texttt{vm1}) and that value (\texttt{v}) correspond to the
+final context (\texttt{vm2}) of the jugement. The rule for function calls
+(\textsc{Ecall}) gives the semantics of the call instruction
+(\texttt{Ccall xs f es}), it has three premisses: the semantics of the argument
+expressions (\texttt{es}) in the initial context (\texttt{vm1}) are values
+(\texttt{vargs}), the semantics of function call relates the function
+(\texttt{f}) and these values (\texttt{vargs}) to other values (\texttt{vres})
+and the semantics of the lvalues (\texttt{xs}) chained on contexts, starting
+from the initial context (\texttt{vm1}), on the latter values (\texttt{vres})
+correspond to the final context (\texttt{vm2}) of the jugement.
 
 
 \subsection{Semantic implications of array expansion}
 
 In this section the semantics changes of all the cases for array expansion are
-described and their implications are discussed.
+described and their implications are discussed. Semantic preservation lemmas are
+illustrated in Figure \ref{fig:semlem}.
+
+\smallskip
 
 \begin{figure}[p]
 \obeylines\obeyspaces\ttfamily%
 let eval\_array s t i = Let w = array\_get t i in Vword s w
 
-let expand\_v expd v =
-~ match expd with
-~ | true  \(\mapsto\) if v is Arr s n t then [:: eval\_array s t i | i \(\leftarrow\) iota 0 n ]
-~   else Error
-~ | false \(\mapsto\) Ok [:: v ]
-~ end.
+let expand\_v e v = if e then
+~   if v is Arr s n t then [:: eval\_array s t i | 0 \(\leq\) i \(<\) n ] else Error
+~ else Ok [:: v ]
 
-let eq\_alloc m vm1 vm2 : Prop =
+Definition eq\_alloc m vm1 vm2 =
 ~ \(\forall\)x, match get m x with
 ~ | Some vx \(\mapsto\) \(\forall\)i vi, get vx i = Some vi \(\Longrightarrow\)
 ~   (Let Varr s n t = vm1.[x] in eval\_array t i) = vm2.[vi]
@@ -652,7 +658,7 @@ Lemma expand\_ePr m vm1 vm2 :
 ~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
 ~ \(\forall\)e1 es2, expand\_e m e1 = Ok (inr es2) \(\Longrightarrow\)
 ~ \(\forall\)v, sem\_pexpr vm1 e1 = Ok v \(\Longrightarrow\)
-~ \(\exists\)vs, expand\_v true v = Ok vs \(\wedge\) mapM2 sem\_pexpr vm2 es2 = Ok vs.
+~ \(\exists\)vs, expand\_v true v = Ok vs \(\wedge\) [:: sem\_pexpr vm2 e | e \(\gets\) es2 ] = Ok vs.
 
 Lemma expand\_lvPl m vm1 vm2 :
 ~ eq\_alloc m vm1 vm2 \(\Longrightarrow\)
@@ -669,9 +675,9 @@ Lemma expand\_lvPr m vm1 vm2 :
 
 Lemma expand\_funcP P1 P2 fexpd fn vargs vret =
 ~ sem\_call P1 fn vargs vret \(\Longrightarrow\)
-~ \(\forall\)expdin expdout, get fexpd fn = Some (expargs, expret) \(\Longrightarrow\)
-~ \(\forall\)vargs', mapM (expand\_v \(\circ\) is\_some) expargs vargs = Ok vargs' \(\Longrightarrow\)
-~ \(\exists\)vret',  mapM (expand\_v \(\circ\) is\_some) expret  vret  = Ok vret'  \(\wedge\)
+~ \(\forall\)xarg xret, get fexpd fn = Some (xarg, xret) \(\Longrightarrow\)
+~ \(\forall\)vargs', [:: expand\_v (is\_some x) v | x \(\gets\) xarg, v \(\gets\) vargs ] = Ok vargs' \(\Longrightarrow\)
+~ \(\exists\)vret',  [:: expand\_v (is\_some x) v | x \(\gets\) xret, v \(\gets\) vret  ] = Ok vret' \(\wedge\)
 ~   sem\_call P2 fn (flatten vargs') (flatten vres').
 
 Lemma expand\_iP P1 P2 fexpd m vm1 vm2 =
@@ -680,27 +686,31 @@ Lemma expand\_iP P1 P2 fexpd m vm1 vm2 =
 ~ \(\forall\)is2, expand\_i fexpd m i1 = Ok is2 \(\Longrightarrow\)
 ~ \(\exists\)vm2', sem P2 vm2 is2 vm2' \(\wedge\) eq\_alloc m vm1' vm2'.
 \normalfont%
-\caption{Lemmas relating the semantics before and after array expansion.}
+\caption{Lemmas relating the semantics before and after array expansion.}\label{fig:semlem}
 \end{figure}
 
-To express semantics preservation we need a relation on contexts and a relation
-between a value and its expansion.
-
-The relation between contexts should relate all expanded array cells to the
-target variables, so the relation holds if each variable not expanded is
-associated to the same value in both contexts and each cell of each expanded
-variable in the source context is associated to the same value as the variable
-it is expanded to in the target context.
-
-The relation between a value and its expansion should relates a value to the
-list of values where if the value is and array and it should be expanded then
-the list is the array cells in order, otherwise the list is the singleton of the
-value unchanged.
+As values and contexts are at the core of semantics, the semantics preservation
+theorem has to express relations between them and their expanded version. The
+relation between a value and its expanded version --a list of values-- is
+\texttt{expand\_v}, it takes a boolean argument to express whether the value
+should be expanded or not. If the value is expanded then it is an array and its
+expansion is the list of its cells. The relation between a context and its
+expanded version is \texttt{eq\_alloc}, it takes the same information for
+expanding variables as the AST expansion. The relation holds if all expanded
+arrays have their cell equal to the variable to which it is expanded in the
+expanded context and all the other variables are equal in both contexts.
 
 \medskip
 
-Assume we have a program, its expansion and the expansion information for each
-function signature of that program.
+Assume we have a program \texttt{P1}, its expansion \texttt{P2} and the
+expansion information \texttt{fexpd} gathered when expanding the function
+signatures (\texttt{expand\_fsig} in Figure \ref{fig:sigexp}) formatted as a map
+from functions uids to two list of option type, one matching the parameters in
+length and the other the returned variables, where \texttt{None} at a position
+means the parameter/returned variable at the same position is not expanded and
+\texttt{Some n} means that variable is an expanded array of length \texttt{n}).
+
+% TODO: from HERE
 
 The semantics of a function call after array expansion should take the expanded
 list of values and return the values of the expanded variables. The semantics is
@@ -806,10 +816,11 @@ The old contexts used a dependent type to store the values, this dependent type
 was either \texttt{sem\_t} or \texttt{psem\_t}. The latter described in Figure
 \ref{fig:psemt} is used to store smaller words into seemingly bigger words for
 a compilation step where all registers and words become 64 bits as is available
-in a x86 cpu. The old invariant the context maintained using the dependent types
-was that the type of the variable corresponded to the type of the value stored
-since the type of the value stored was the dependent type aplied to the type of
-the variable, which in turn gave the invariant
+in a x86 processor. The old invariant the context maintained using the dependent
+types was that the type of the variable corresponded to the type of the value
+stored since the type of the value stored was the dependent type aplied to the
+type of the variable, which in turn gave the invariant presented in Section
+\ref{ssec:jassem}
 \texttt{vm.[x] = Ok v \(\Longrightarrow\) type\_of\_val v = v\_ty x} for free.
 
 \begin{figure}[t]
@@ -847,21 +858,20 @@ let word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) =
 ~ s1 \(\leq\) s2 \(\wedge\) w1 = zero\_extend s1 w2
 
 let array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) =
-~ n1 = n2 \(\wedge\) \(\forall\)i w,
-~   array\_get a1 i = Ok w \(\Longrightarrow\) array\_get a2 i = Ok w
+~ n1 = n2 \(\wedge\;\bigwedge_{i = 0}^{n1 - 1}\) if array\_get a1 i is Ok w then array\_get a2 i = Ok w else false
 
 let value\_uincl v1 v2 =
 ~ match v1, v2 with
 ~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\mapsto\) array\_uincl s1 n1 s2 n2 t1 t2
 ~ | Vword s1 w1,   Vword s2 w2   \(\mapsto\) word\_uincl s1 s2 w1 w2
-~ | Vundef,        \_             \(\mapsto\) compat\_type t (type\_of\_val v2)
+~ | Vundef,        Vword \_ \_     \(\mapsto\) true
 ~ | \_,             \_             \(\mapsto\) false
 
 Lemma value\_uincl\_truncate ty x y x' :
 ~ value\_uincl x y \(\Longrightarrow\) truncate\_val ty x = Ok x' \(\Longrightarrow\)
 ~ \(\exists\)y', truncate\_val ty y = Ok y' \(\wedge\) value\_uincl x' y'.
 
-Lemma set\_get vm vm' x v : vm.[x \(\leftarrow\) v] = Ok vm' \(\Longrightarrow\)
+Lemma set\_get vm vm' x v : vm.[x \(\gets\) v] = Ok vm' \(\Longrightarrow\)
 ~ vm'.[x] = if rel (type\_of\_val v) (v\_ty x) then v else truncate\_val (v\_ty x) v.
 \normalfont%
 \caption{Core lemma used to prove semantics preservation.}
@@ -870,29 +880,28 @@ Lemma set\_get vm vm' x v : vm.[x \(\leftarrow\) v] = Ok vm' \(\Longrightarrow\)
 The semantics of instructions and function call presented in the previous section
 was simplified. In particular because of the step where all stored words become
 64 bits, they are truncated to the size they are supposed to be before being
-assigned and after being retreived from the context. The truncation function
+assigned and after being retrieved from the context. The truncation function
 has to be extended to undefined values. There are several ways to do this
-extension, but the truncattion function should still verify two core properties
-to most of the proofs of semantics preservation in all compilation steps:
+extension, but the truncation function should still verify two core properties
+to do most of the proofs of semantics preservation in all compilation steps:
 \begin{itemize}
-\item If assigning a value to a variable in a context succeds, then the value
+\item If assigning a value to a variable in a context succeeds, then the value
   associated to the variable is either the value assigned if the relation of the
   context is satisfied between the type of the value and the type of the
   variable or it is the truncation of the value assigned to the type of the
   variable (if the type of the value is bigger than the type of the variable,
-  because it is the only other case where the assignment succeds).
+  because it is the only other case where the assignment succeeds).
 \item If a value is an extension (array more defined or bigger word of same
   value) of another then truncating them to the same type preserve this
   extension relation.
 \end{itemize}
-The first property is needed to be able to store smaller words into 64 bit words
+The first property is needed to be able to store smaller words into 64 bits word
 variables and it forces the truncation to be the identity when the truncation
 type is bigger than the value type.
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
-let truncate\_val ty v =
-~ match v with
+let truncate\_val ty = function
 ~ | Varr s n \_ \(\mapsto\) if ty = Arr s n then Ok v else Error
 ~ | Vword s w  \(\mapsto\) if ty is Word s'
 ~   then Ok (if truncate\_word s' w is Ok w' then Vword s' w' else v) else Error
@@ -909,7 +918,7 @@ properties are verified.
 
 With these modifications we are confident the correctness proof should be
 provable. At the writing of this article the correctness proof for the register
-allocation step succeded and the proof for the register array expansion is in
+allocation step succeeded and the proof for the register array expansion is in
 progress.
 
 \section{Conclusion}\label{sec:ccl}
