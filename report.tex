@@ -877,6 +877,13 @@ let compat\_type t1 t2 =
 ~ | \_,      \_      \(\mapsto\) t1 = t2
 
 let is\_word t = if t is Word \_ then true else false
+
+let truncate\_val ty = function
+~ | Varr s n \_ \(\mapsto\) if ty = Arr s n then Ok v else Error
+~ | Vword s w  \(\mapsto\) if ty is Word s'
+~   then Ok (if truncate\_word s' w is Ok w' then Vword s' w' else v) else Error
+~ | Vundef     \(\mapsto\) if ty is Arr \_ then Ok Vundef else Error
+\normalfont%
 \normalfont%
 \caption{Subtyping relation and type compatibility relation.}\label{fig:typerel}
 \end{figure}
@@ -893,85 +900,22 @@ undefined value so there is no fail case. Therefore the invariant becomes
 \texttt{if vm.[x] = Vundef then is\_word (type\_of\_val vm.[x]) else (rel vm) (type\_of\_val vm.[x]) (v\_ty x)}
 where \texttt{rel vm} is the type relation parameter of the context \texttt{vm}.
 
-\medskip
+\smallskip
 
-\begin{figure}[t]
-\obeylines\obeyspaces\ttfamily%
-let word\_uincl s1 s2 (w1 : word s1) (w2 : word s2) =
-~ s1 \(\leq\) s2 \(\wedge\) w1 = zero\_extend s1 w2
+Another place where the storage of smaller words into bigger words has an impact
+is the semantics of instructions and function call. The one presented in the
+previous section was simplified. In particular because of the compiler pass
+where all words are stored on 64 bits, they are truncated to the size they are
+supposed to be before any operation and after being retrieved from the context.
+The truncation function (\texttt{truncate\_val}) had to be extended to undefined
+values.
 
-let array\_uincl s1 n1 s2 n2 (a1 : array s1 n1) (a2 : array s2 n2) =
-~ n1 = n2 \(\wedge\;\bigwedge_{i = 0}^{n1 - 1}\) if array\_get a1 i is Ok w then array\_get a2 i = Ok w else false
-
-let value\_uincl v1 v2 =
-~ match v1, v2 with
-~ | Varr s1 n1 t1, Varr s2 n2 t2 \(\mapsto\) array\_uincl s1 n1 s2 n2 t1 t2
-~ | Vword s1 w1,   Vword s2 w2   \(\mapsto\) word\_uincl s1 s2 w1 w2
-~ | Vundef,        Vword \_ \_     \(\mapsto\) true
-~ | \_,             \_             \(\mapsto\) false
-
-Lemma value\_uincl\_truncate ty x y x' :
-~ value\_uincl x y \(\Longrightarrow\) truncate\_val ty x = Ok x' \(\Longrightarrow\)
-~ \(\exists\)y', truncate\_val ty y = Ok y' \(\wedge\) value\_uincl x' y'.
-
-Lemma set\_get vm vm' x v : vm.[x \(\gets\) v] = Ok vm' \(\Longrightarrow\)
-~ vm'.[x] = if rel (type\_of\_val v) (v\_ty x) then v else truncate\_val (v\_ty x) v.
-\normalfont%
-\caption{Core lemma used to prove semantics preservation.}\label{fig:corlem}
-\end{figure}
-
-The semantics of instructions and function call presented in the previous
-section was simplified. In particular because of the compiler pass where all
-words are stored on 64 bits, they are truncated to the size they are supposed
-to be before any operation and after being retrieved from the context. The
-truncation function (\texttt{truncate\_val}) has to be extended to undefined
-values. There are several ways to do this extension, but the truncation function
-should still verify two core properties \texttt{value\_uincl\_truncate} and
-\texttt{set\_get} described in Figure \ref{fig:corlem} to be able to prove
-semantics preservation in all compilation passes.
-
-% TODO: from HERE
-
-\begin{itemize}
-\item If assigning a value to a variable in a context succeeds, then the value
-  associated to the variable is either the value assigned if the relation of the
-  context is satisfied between the type of the value and the type of the
-  variable or it is the truncation of the value assigned to the type of the
-  variable (if the type of the value is bigger than the type of the variable,
-  because it is the only other case where the assignment succeeds).
-\item If a value is an extension (array more defined or bigger word of same
-  value) of another then truncating them to the same type preserve this
-  extension relation.
-\end{itemize}
-The first property is needed to be able to store smaller words into 64 bits word
-variables and it forces the truncation to be the identity when the truncation
-type is bigger than the value type.
-
-% TODO: to HERE
-
-\begin{figure}[t]
-\obeylines\obeyspaces\ttfamily%
-let truncate\_val ty = function
-~ | Varr s n \_ \(\mapsto\) if ty = Arr s n then Ok v else Error
-~ | Vword s w  \(\mapsto\) if ty is Word s'
-~   then Ok (if truncate\_word s' w is Ok w' then Vword s' w' else v) else Error
-~ | Vundef     \(\mapsto\) if ty is Arr \_ then Ok Vundef else Error
-\normalfont%
-\caption{Truncation of values to use with the new contexts.}\label{fig:trval}
-\end{figure}
-
-If we chose the truncation to be the identity in the undefined case and the
-truncation of a word to a bigger size (where previously it failed) as depicted
-in Figure \ref{fig:trval} then both properties are verified.
-
-\medskip
-
-With these modifications we are confident the correctness proof should be
+With the modifications we did, we are confident the correctness proof is
 provable. At the writing of this article the correctness proof for the register
 allocation pass succeeded and the proof for the register array expansion is in
 progress.
 
-\section{Conclusion}\label{sec:ccl} % TODO
+\section{Conclusion}\label{sec:ccl}
 
 The implementation of array expansion in the Jasmin compiler allows the users to
 manipulate registers by manipulating arrays. These arrays are allocated to the
