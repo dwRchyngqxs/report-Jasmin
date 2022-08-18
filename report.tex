@@ -49,7 +49,7 @@ register allocated ones. The user has to tell the compiler the kind of every
 variables. This also holds true for arrays. However on most processors on which
 people run cryptographic primitives and software, there is no hardware support
 for indexing registers with a value, all registers need to be known at
-compilation. In Jasmin a compilation step does it.
+compilation. In Jasmin a compilation pass does it.
 
 \medskip
 
@@ -63,20 +63,18 @@ also be thought as a partial map from integers to variables, that is any array
 \(\mathit{set}\;k\;x\) sets \(t_k\) to \(x\).
 
 This way of thinking about arrays allows us to eliminate Jasmin register arrays
-by replacing them by variables. This compilation step is called array expansion
-and is not a standard compilation step. In the following array expansion will
+by replacing them by variables. This compilation pass is called array expansion
+and is not a standard compilation pass. In the following array expansion will
 also refer to the action of eliminating arrays by replacing them with the
 appropriate amount of variables.
 
 \medskip
 
-In this article we try to extend the array expansion step the Jasmin compiler
+In this article we try to extend the array expansion pass the Jasmin compiler
 already performs. In particular we implemeted array expansion in function
 signature and function calls, and we studied how more array expansion could be
 performed in particular for slice assignments informed by how the expansion of
 whole arrays in function call works.
-
-% TODO: related word
 
 \medskip
 
@@ -236,7 +234,7 @@ let expand\_lv m = function
 A variable of type array and kind register means an array of registers, but in
 most common processors on which cryptographic primitives are run there is no
 hardware support for indexing registers with a register. Therefore we need to
-eliminate them in some compilation step; this is what the array expansion step
+eliminate them in some compilation pass; this is what the array expansion pass
 does in the Jasmin compiler. Other kind of arrays are not expanded --even though
 we could try to expand them-- because there is hardware support for indexing
 memory with a register and so we consider users know what they want.
@@ -282,10 +280,10 @@ evaluated, in the latter case the expression evaluates to \texttt{Error}.
 
 The figure doesn't describe actual implemented code because expansion of
 variables and subarrays for assignments is performed in a previous compilation
-step\footnote{Prior to our work, single cell access for lvalues and expression
-in assignments was implmented in the array expansion step and variable expansion
-was implemented in a previous compilation step}, but they could all be
-implemented in one compiler step as the code required to expand expressions and
+pass\footnote{Prior to our work, single cell access for lvalues and expression
+in assignments was implmented in the array expansion pass and variable expansion
+was implemented in a previous compilation pass}, but they could all be
+implemented in one compiler pass as the code required to expand expressions and
 lvalues for function calls and assignment only differs slightly as will be shown
 further in this section.
 
@@ -294,8 +292,8 @@ further in this section.
 Single cell indexing (\texttt{Pget} and \texttt{Laget}) can be expanded to a
 single variable (\texttt{Pvar} and \texttt{Lvar}) when the index is a constant.
 Otherwise it is not supported. When the index is a for loop variable in the
-original program, the loop unrolling and constant propagation steps which come
-before the array expansion step have already transformed the indexes into
+original program, the loop unrolling and constant propagation passes which come
+before the array expansion pass have already transformed the indexes into
 constants, so it also falls under the constant case.
 
 Array slices (\texttt{Psub} and \texttt{Lasub}) are expanded by acceding to
@@ -310,18 +308,21 @@ replaced with.
 
 \smallskip
 
-In order to perform the unrolling we need to know whether an expansion was
-performed in expressions and lvalues because an array may have been expanded in
-one but not in the other, and only looking at the length of the expanded
-expressions and lvalues isn't sufficient as arrays can be of length one.
+In order to perform the unrolling we need to know whether the result of the
+expansion of an expression or lvalue changed its type (\texttt{inr} cases) or
+not (\texttt{inl} cases). For instace expanding a single cell access doesn't
+change type (\texttt{Pget} or \texttt{Laget} are typed as word, and the variable
+they are expanded to is also a word of the same size) even though an array
+expansion is performed, whereas expanding a whole array does (array to several
+words). We need this information because any instruction featuring expressions
+or lvalues usually features the other and an array may have been expanded in one
+but not in the other (because it is a register array in one side and not the
+other), and only looking at the length of the expanded expressions and lvalues
+isn't sufficient as arrays can be of length one.
 
-For instance when expanding an assignment between a single cell register array
-and a single cell stack array, the register array will be expanded to a list of
-one expression or lvalue (depending on which side of the assignment it is),
-which by the length alone doesn't tell whether it was expanded or not, and we
-should know that because in one case nothing is done and in the other the
-assignment is unrolled, that is the array on the other side is replaced with an
-access to its only cell.
+For instance when expanding an assignment between single cell arrays, the
+expanded expression and lvalue will be of length 1, which doesn't indicate
+whether any array was expanded into a single word variable.
 
 The expansion for unrolling expressions and lvalues (no array expansion
 performed) is illustrated in Figure \ref{fig:unrexp} with the functions
@@ -629,7 +630,9 @@ correspond to the final context (\texttt{vm2}) of the jugement.
 
 In this section the semantics changes of all the cases for array expansion are
 described and their implications are discussed. Semantic preservation lemmas are
-illustrated in Figure \ref{fig:semlem}.
+illustrated in Figure \ref{fig:semlem} using a mix of Coq\footnote{Most of
+developpement presented previously is in Coq, but for proofs there is no simpler
+equivalent}-like and mathematical syntax for lemmas.
 
 \smallskip
 
@@ -703,57 +706,70 @@ expanded context and all the other variables are equal in both contexts.
 
 Assume we have a program \texttt{P1}, its expansion \texttt{P2} and the
 expansion information \texttt{fexpd} gathered when expanding the function
-signatures (\texttt{expand\_fsig} in Figure \ref{fig:sigexp}) formatted as a map
-from functions uids to two list of option type, one matching the parameters in
-length and the other the returned variables, where \texttt{None} at a position
-means the parameter/returned variable at the same position is not expanded and
-\texttt{Some n} means that variable is an expanded array of length \texttt{n}).
-
-% TODO: from HERE
-
-The semantics of a function call after array expansion should take the expanded
-list of values and return the values of the expanded variables. The semantics is
-preserved when if the semantics of a function call in the original program
-relates a list of argument to a list of return values then the semantics of the
-same function in the expanded program relates the list of expanded arguments and
-return values, expansion done according to the expansion information for that
-function signature.
-
-The semantics of an instruction after array expansion should be the semantics of
-the list of instructions where an assignment is transformed into a list of
-instructions and a function call is transformed by changing the argument
-expressions and lvalues according to its signature. The semantics is
-preserved when the semantics of an instruction and its expansion on related
-contexts are related contexts.
+signatures (\texttt{expand\_fsig} in Figure \ref{fig:sigexp}).
 
 \smallskip
 
-The semantics of an expression after array expansion is either the semantics of
-the one obtained expression when no expansion was performed or the expression
-was a single cell access or the list of the semantics of each expression in the
-expansion for array variables and array slices. The semantics is preserved when
-expanding the semantics of an expression in a context gives the semantics of
-the expanded expression in a related context. Likewise for the semantics of a
-lvalues, except we suppose expanded values are related and we should get
-related resulting contexts.
+The semantics of a function call after array expansion takes an expanded list
+of values as arguments, executes the expaded body on these variables and returns
+the values of the expanded returned variables. Hence the semantics preservation
+lemma for expanded functions (\texttt{expand\_funcP}) assumes the original
+semantics and expansion of arguments and requires the semantics of the expanded
+functions on expanded arguments to correspond to the expanded list of return
+values.
+
+The semantics of an instruction after array expansion takes an expanded context,
+executes instruction on it and returns an expanded context. Hence the semantics
+preservation lemma for expanded instructions (\texttt{expand\_iP}) assumes the
+original semantics relates a context \texttt{vm1} to a context \texttt{vm1'},
+the first context \texttt{vm1} is related with the expansion relation to an
+initial context \texttt{vm2} for executing the expanded instruction and requires
+the context \texttt{vm1'} to be related with the expansion relation to a context
+\texttt{vm2'} and the semantics of the expanded instructions relates the expanded
+initial context \texttt{vm1'} to the expanded final context \texttt{vm2'}.
+
+\smallskip
+
+After array expansion, an expression is either a single expression (\texttt{inl}
+case) or it becomes a list of expressions (\texttt{inr} case). Their semantics
+in the expanded context is a list of values. Hence the semantics preservation
+lemmas for expanded expressions (\texttt{expand\_ePl} and \texttt{expand\_ePr})
+assume the original semantics in a context \texttt{vm1} is a value \texttt{v},'
+the orgiginal context \texttt{vm1} is related with the expansion relation to a
+context \texttt{vm2} and requires to prove that the expanded expressions
+semantics in the expanded context \texttt{vm2} corresponds to the expansion of
+value \texttt{v}, or when the expansion is a single expression that this
+expression semantics is the same as the original expression semantics.
+
+After array expansion, a lvalue is either a single lvalue (\texttt{inl} case) or
+it becomes a list of lvalues (\texttt{inr} case). Their semantics starting from
+an expanded context on an expanded value is an expanded context, and in the case
+the lvalue is expanded to a list of lvalues their semantics is chained on the
+contexts. Hence the semantics preservation lemmas for expanded lvalues
+(\texttt{expand\_lvPl} and \texttt{expand\_lvPr}) assume the semantics of the
+original lvalue on a value \texttt{v} relates a context \texttt{vm1} to a
+context \texttt{vm1'}, the initial context \texttt{vm1} is related using the
+expansion relation to a context \texttt{vm2} and requires to prove the final
+context \texttt{vm1'} is in relation to an expanded context \texttt{vm2'}, using
+expansion relation, corresponding to the final context related to the context
+\texttt{vm2} by the semantics of the expanded lvalue on the expansion of value
+\texttt{v}.
 
 \medskip
 
-To prove the semantics preservation, we need to consider that array are actually
-partial arrays, so we must be able to expand the whole array without raising an
-error, and the target expanded variables have to be associated a value. This is
-not limiting in the relation on contexts but it is in the function calls when a
-new context is built. To build this new context we evaluate every argument,
-including the one we expanded form a partially defined array. It is also
-limiting when assigning a arrays because we may not know which cell are defined.
+With these lemmas proved, proving the semantics preservation theorem is just a
+matter of proving the exported functions are unmodified and using the semantic
+preservation lemma for function. However this lemma is not provable: Calling a
+function requires to build a context where each parameter receives a value, but
+the array semantics is partial arrays so some cells are not defined and
+accessing their value fails, so programs where some functions were called on
+partial arrays wouldn't have a semantics after the transformation. It is not an
+issue when comparing contexts as the objects compared in \texttt{eq\_alloc} are
+either \texttt{Ok} of some value or \texttt{Error} which account for the case
+where the access to an array cell or a variable fails.
 
-This problem can be solved in several different ways. We could force the array
-to be completely initialised, track the initialised cells (which would require
-some kind of reduction of expressiveness as otherwise it isn't computable),
-store optional words instead of words in the context or allow values to be
-undefined. We chose the last solution.
 
-\smallskip
+\section{Pervasive changes to Jasmin semantics}\label{sec:perch}
 
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
@@ -767,23 +783,41 @@ let type\_of\_val = function
 ~ | Vword s  \_ \(\mapsto\) Word s
 ~ | Varr s n \_ \(\mapsto\) Arr s n
 \normalfont%
-\caption{New value type.}
+\caption{New value type.}\label{fig:newval}
 \end{figure}
 
-The new value type features the undefined word (arrays are always defined) and
+In this section the changes made to be able to prove the semantics preservation
+theorem are described and motivated. This part takes the most time of all as the
+changes made are at the core of the semantics, thus affecting every compilation
+pass, requiring the proof of every compilation pass to be fixed. Because of the
+change affecting all compilation passes, less simplifications than in the
+previous sections will be made, exposing some details previously hidden.
+
+\smallskip
+
+The issue raised by array expansion preventing us from proving semantics
+preservation is caused by the semantics of arrays which are partial arrays, so
+the fix requires to modify the semantics\footnote{or give up some parts of array
+expansion}. It can be solved either by eliminating parially initialised arrays,
+requiring arrays to be completely initialised, tracking the initialised cells
+(which would require some kind of reduction of expressiveness as otherwise it
+isn’t computable), store optional words instead of words in the context or allow
+values to be undefined. We chose the last solution as undefined values were
+already in the value type for booleans (which were hidden in previous sections
+because of irrelevance).
+
+The new value type described in Figure \ref{fig:newval} features the undefined
+word value (arrays are always defined even though some cells may not be) and
 context have been modified to store values of the new \texttt{value} type
 instead of the \texttt{sem\_t} dependent type.
 
+\smallskip
 
-\section{Pervasive changes to Jasmin semantics}\label{sec:perch}
-
-In this section the changes to incorporate undefined value are motivated and
-described while uncovering some relevant simplifications used in the previous
-sections.
+% TODO: from HERE
 
 There are two main motivations for replacing the dependent type in the contexts.
-The first is to include an undefined values, which could be done by an option
-type in the dependent type so the second motivation is to simplify the proofs.
+The first is to generalise undefined values, which could be done by an option
+type in the dependent type. The second motivation is to simplify the proofs.
 Proofs on dependent type tend to be tiresome because every rewriting need to
 ensure type are not violated, which in the case of dependent type means ensuring
 the parameter given to the dependent type are the same. This need is eliminated
@@ -814,7 +848,7 @@ type psem\_t = function
 The old contexts used a dependent type to store the values, this dependent type
 was either \texttt{sem\_t} or \texttt{psem\_t}. The latter described in Figure
 \ref{fig:psemt} is used to store smaller words into seemingly bigger words for
-a compilation step where all registers and words become 64 bits as is available
+a compilation pass where all registers and words become 64 bits as is available
 in a x86 processor. The old invariant the context maintained using the dependent
 types was that the type of the variable corresponded to the type of the value
 stored since the type of the value stored was the dependent type aplied to the
@@ -882,7 +916,7 @@ was simplified. In particular because of the step where all stored words become
 assigned and after being retrieved from the context. The truncation function
 has to be extended to undefined values. There are several ways to do this
 extension, but the truncation function should still verify two core properties
-to do most of the proofs of semantics preservation in all compilation steps:
+to do most of the proofs of semantics preservation in all compilation passes:
 \begin{itemize}
 \item If assigning a value to a variable in a context succeeds, then the value
   associated to the variable is either the value assigned if the relation of the
@@ -917,7 +951,7 @@ properties are verified.
 
 With these modifications we are confident the correctness proof should be
 provable. At the writing of this article the correctness proof for the register
-allocation step succeeded and the proof for the register array expansion is in
+allocation pass succeeded and the proof for the register array expansion is in
 progress.
 
 \section{Conclusion}\label{sec:ccl}
