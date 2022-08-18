@@ -920,15 +920,18 @@ Lemma set\_get vm vm' x v : vm.[x \(\gets\) v] = Ok vm' \(\Longrightarrow\)
 \caption{Core lemma used to prove semantics preservation.}\label{fig:corlem}
 \end{figure}
 
+The semantics of instructions and function call presented in the previous
+section was simplified. In particular because of the compiler pass where all
+words are stored on 64 bits, they are truncated to the size they are supposed
+to be before any operation and after being retrieved from the context. The
+truncation function (\texttt{truncate\_val}) has to be extended to undefined
+values. There are several ways to do this extension, but the truncation function
+should still verify two core properties \texttt{value\_uincl\_truncate} and
+\texttt{set\_get} described in Figure \ref{fig:corlem} to be able to prove
+semantics preservation in all compilation passes.
+
 % TODO: from HERE
 
-The semantics of instructions and function call presented in the previous section
-was simplified. In particular because of the step where all stored words become
-64 bits, they are truncated to the size they are supposed to be before being
-assigned and after being retrieved from the context. The truncation function
-has to be extended to undefined values. There are several ways to do this
-extension, but the truncation function should still verify two core properties
-to do most of the proofs of semantics preservation in all compilation passes:
 \begin{itemize}
 \item If assigning a value to a variable in a context succeeds, then the value
   associated to the variable is either the value assigned if the relation of the
@@ -944,6 +947,8 @@ The first property is needed to be able to store smaller words into 64 bits word
 variables and it forces the truncation to be the identity when the truncation
 type is bigger than the value type.
 
+% TODO: to HERE
+
 \begin{figure}[t]
 \obeylines\obeyspaces\ttfamily%
 let truncate\_val ty = function
@@ -952,12 +957,12 @@ let truncate\_val ty = function
 ~   then Ok (if truncate\_word s' w is Ok w' then Vword s' w' else v) else Error
 ~ | Vundef     \(\mapsto\) if ty is Arr \_ then Ok Vundef else Error
 \normalfont%
-\caption{Truncation of values to use with the new contexts.}
+\caption{Truncation of values to use with the new contexts.}\label{fig:trval}
 \end{figure}
 
 If we chose the truncation to be the identity in the undefined case and the
-truncation of a word to a bigger size (where previously it failed) then both
-properties are verified.
+truncation of a word to a bigger size (where previously it failed) as depicted
+in Figure \ref{fig:trval} then both properties are verified.
 
 \medskip
 
@@ -966,11 +971,19 @@ provable. At the writing of this article the correctness proof for the register
 allocation pass succeeded and the proof for the register array expansion is in
 progress.
 
-\section{Conclusion}\label{sec:ccl}
-% Présentation du travail restant dans le stage ainsi que potentiellement après
-% le stage: FIXER LES PREUVES
-% ouverture: array expansion is not limited to our compiler, you could implement
-% your own version too and get handy array interface on variables
+\section{Conclusion}\label{sec:ccl} % TODO
+
+The implementation of array expansion in the Jasmin compiler allows the users to
+manipulate registers by manipulating arrays. These arrays are allocated to the
+registers by allocating each cell, unrolling the operations and modifying
+function signatures. This last transformation necessited a deep change in the
+semantics in order to prove the compiler correctness. The influence of this
+change is global and currently only a few compiler pass correction proofs are
+fixed.
+
+Allocating an array to registers is a pass that can be implemented in other
+compiler similarly to what we did, only the proof work is specific to Jasmin
+value semantics.
 
 \section{Bibliography}
 \bibliographystyle{plain}
