@@ -813,20 +813,28 @@ instead of the \texttt{sem\_t} dependent type.
 
 \smallskip
 
-% TODO: from HERE
-
 There are two main motivations for replacing the dependent type in the contexts.
-The first is to generalise undefined values, which could be done by an option
-type in the dependent type. The second motivation is to simplify the proofs.
+The first is to extend undefined values to the word type, which could be done
+several ways without removing dependent types, for instance by using an option
+word type instead of the word type
+(\(\texttt{sem\_t} : \texttt{Word s} \mapsto \texttt{option (word s)}\)).
+The second motivation is that eliminating dependent types makes invariants
+explicit and tend to simplify the proofs.
+
 Proofs on dependent type tend to be tiresome because every rewriting need to
-ensure type are not violated, which in the case of dependent type means ensuring
-the parameter given to the dependent type are the same. This need is eliminated
-with a value type since all values are of the value type. Removing dependent
-types where unnecessary and favoring decidable alternatives is also a design
-choice made by SSReflect, a widespread Coq proof library used in Jasmin. The
-drawbacks of not using dependent types are that invariants need to be stated and
-proved manually, which is actually not that much of a drawback since the
-invariants become explicit and the proof needed are usually easy to prove.
+ensure types are not violated, which in the case of dependent type means
+ensuring the parameters given to the dependent type are rewritten uniformly in
+the goal and assumptions. In particular in proofs using variables we sometimes
+weren't able to rewrite the \texttt{v\_ty} field without extra work. This need
+is eliminated by using a non-dependant value type since all values are of the
+\texttt{value} type instead of being of one of \texttt{word}, \texttt{array} or
+the other types.
+
+Removing dependent types where unnecessary and favoring decidable alternatives
+is also a design choice made by SSReflect, a widespread Coq proof library used
+in Jasmin. The drawbacks of not using dependent types are that invariants need
+to be stated and proved manually, which is actually not that much of a drawback
+since the invariants become explicit and the proof are usually easy to do.
 
 \medskip
 
@@ -851,7 +859,7 @@ was either \texttt{sem\_t} or \texttt{psem\_t}. The latter described in Figure
 a compilation pass where all registers and words become 64 bits as is available
 in a x86 processor. The old invariant the context maintained using the dependent
 types was that the type of the variable corresponded to the type of the value
-stored since the type of the value stored was the dependent type aplied to the
+stored, since the type of the value stored was the dependent type applied to the
 type of the variable, which in turn gave the invariant presented in Section
 \ref{ssec:jassem}
 \texttt{vm.[x] = Ok v \(\Longrightarrow\) type\_of\_val v = v\_ty x} for free.
@@ -867,21 +875,23 @@ let compat\_type t1 t2 =
 ~ match t1, t2 with
 ~ | Word \_, Word \_ \(\mapsto\) true
 ~ | \_,      \_      \(\mapsto\) t1 = t2
+
+let is\_word t = if t is Word \_ then true else false
 \normalfont%
-\caption{Type relations.}
+\caption{Subtyping relation and type compatibility relation.}\label{fig:typerel}
 \end{figure}
 
 The new context store their value in the new \texttt{value} type. To account for
-the two cases where we have words of the right size or of a smaller size allowed
-the contexts take a type relation as parameter, this type relation is either
-equality or subtyping only on words. We need to manually ensure the previous
-context invariant is still maintained. However since we have undefined values we
-can make the access to a variable in the context never fail, instead like for
-the array previously it returns undefined for word variables and an empty array
-of the right type for array variable (this is considered the undefined value for
-an array) so the new invariant to maintain is
-\texttt{vm.[x] \(\neq\) Vundef \(\Longrightarrow\) rel (type\_of\_val vm.[x]) (v\_ty x)}
-where \texttt{rel} is the type relation parameter of the context.
+the two cases where we have words of the right size or of a smaller size
+allowed, the contexts take a type relation as parameter, this type relation is
+either equality or subtyping (\texttt{subtype}) only on words as defined in
+Figure \ref{fig:typerel}. We need to manually ensure the previous context
+invariant introduced in Section \ref{ssec:jassem} is still maintained.
+Previously the access to a variable could fail if the variable is undefined and
+a word for instance, now access to undefined word variable succeeds with the
+undefined value so there is no fail case. Therefore the invariant becomes
+\texttt{if vm.[x] = Vundef then is\_word (type\_of\_val vm.[x]) else (rel vm) (type\_of\_val vm.[x]) (v\_ty x)}
+where \texttt{rel vm} is the type relation parameter of the context \texttt{vm}.
 
 \medskip
 
@@ -907,8 +917,10 @@ Lemma value\_uincl\_truncate ty x y x' :
 Lemma set\_get vm vm' x v : vm.[x \(\gets\) v] = Ok vm' \(\Longrightarrow\)
 ~ vm'.[x] = if rel (type\_of\_val v) (v\_ty x) then v else truncate\_val (v\_ty x) v.
 \normalfont%
-\caption{Core lemma used to prove semantics preservation.}
+\caption{Core lemma used to prove semantics preservation.}\label{fig:corlem}
 \end{figure}
+
+% TODO: from HERE
 
 The semantics of instructions and function call presented in the previous section
 was simplified. In particular because of the step where all stored words become
